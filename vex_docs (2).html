@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vex V2 Documentation</title>
+<style>
+:root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;--text:#c9d1d9;--text2:#8b949e;--head:#f0f6fc;--link:#58a6ff;--link2:#79c0ff;--code:#161b22;--code2:#e6edf3;--th:#21262d;--tr:#0d1117;--tr2:#161b22;--btn:#21262d;--btn2:#30363d;--btnh:#484f58}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;font-size:15px;overflow:hidden}
+a{color:var(--link);text-decoration:none}
+a:hover{color:var(--link2);text-decoration:underline}
+code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;background:var(--code);color:var(--code2);padding:0.15em 0.4em;border-radius:4px;font-size:0.9em;border:1px solid var(--border)}
+pre{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:1rem;overflow-x:auto;position:relative}
+pre code{background:none;border:none;padding:0;font-size:0.85em}
+h1,h2,h3,h4{color:var(--head);font-weight:600;margin-top:0;margin-bottom:1rem;letter-spacing:-0.02em}
+h1{font-size:2rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem}
+h2{font-size:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-top:2rem}
+h3{font-size:1.2rem;margin-top:2rem}
+h4{font-size:1rem;color:var(--text2);margin-top:1.5rem}
+p{margin:0.8rem 0}
+ul,ol{margin:0.8rem 0;padding-left:1.5rem}
+li{margin:0.25rem 0}
+table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:0.95em}
+th,td{text-align:left;padding:0.6rem 0.8rem;border:1px solid var(--border)}
+th{background:var(--th);color:var(--head);font-weight:500}
+tr:nth-child(even){background:var(--tr2)}
+tr:nth-child(odd){background:var(--tr)}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+
+.layout{display:flex;max-width:1400px;margin:0 auto;height:100vh}
+.sidebar{width:260px;flex-shrink:0;padding:1.5rem;border-right:1px solid var(--border);overflow-y:auto;height:100vh}
+.sidebar h2{font-size:0.85rem;margin-top:1.5rem;border:none;padding:0;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em}
+.sidebar a{display:block;padding:0.35rem 0;color:var(--text);font-size:0.9em;cursor:pointer}
+.sidebar a:hover{color:var(--link);text-decoration:none}
+.sidebar a.active{color:var(--link);font-weight:500}
+.main{flex:1;padding:0;height:100vh;overflow:hidden;position:relative}
+.page{position:absolute;top:0;left:0;right:0;bottom:0;padding:2rem 3rem;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity 0.15s ease}
+.page.active{opacity:1;pointer-events:auto}
+
+.copy{position:absolute;top:0.5rem;right:0.5rem;background:var(--btn);border:1px solid var(--border);color:var(--text2);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.8em;cursor:pointer;opacity:0;transition:opacity 0.15s}
+.copy:hover{background:var(--btnh);color:var(--text)}
+pre:hover .copy{opacity:1}
+
+.burger{display:none;position:fixed;top:1rem;left:1rem;z-index:100;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.7rem;cursor:pointer;color:var(--text)}
+.burger span{display:block;width:20px;height:2px;background:var(--text);margin:4px 0;border-radius:1px}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:90}
+.overlay.open{display:block}
+
+@media(max-width:900px){
+body{overflow:auto}
+.burger{display:block}
+.layout{display:block;height:auto}
+.sidebar{position:fixed;top:0;left:0;width:260px;height:100vh;z-index:95;background:var(--bg);transform:translateX(-100%);transition:transform 0.2s ease;border-right:1px solid var(--border)}
+.sidebar.open{transform:translateX(0)}
+.main{height:auto;overflow:visible;padding-top:3rem}
+.page{position:relative;padding:1.5rem;opacity:1;pointer-events:auto;display:none}
+.page.active{display:block}
+.copy{opacity:1}
+}
+</style>
+</head>
+<body>
+<div class="burger" onclick="toggle()">
+<span></span><span></span><span></span>
+</div>
+<div class="overlay" onclick="toggle()"></div>
+<div class="layout">
+<nav class="sidebar" id="nav">
+<a style="font-weight:600;font-size:1.1rem;color:var(--head);margin-bottom:1rem;display:block;">Vex V2</a>
+<h2>Overview</h2>
+<a onclick="go('quick')">Quick Start</a>
+<a onclick="go('vex')">Vex View</a>
+<h2>Builders</h2>
+<a onclick="go('button')">ButtonBuilder</a>
+<a onclick="go('select')">SelectBuilder</a>
+<a onclick="go('typed_select')">TypedSelectBuilder</a>
+<a onclick="go('action_row')">ActionRowBuilder</a>
+<a onclick="go('section')">SectionBuilder</a>
+<a onclick="go('gallery')">GalleryBuilder</a>
+<a onclick="go('container')">ContainerBuilder</a>
+<a onclick="go('text_input')">TextInputBuilder</a>
+<a onclick="go('modal')">ModalBuilder</a>
+<h2>Features</h2>
+<a onclick="go('pagination')">Pagination</a>
+<a onclick="go('confirmation')">Confirmation Flows</a>
+<a onclick="go('choice')">Choice & Select</a>
+<a onclick="go('pickers')">Entity Pickers</a>
+<a onclick="go('help_registry')">Help Registry</a>
+<a onclick="go('cooldowns')">Cooldowns</a>
+<a onclick="go('cards')">Utility Cards</a>
+<a onclick="go('errors')">Error Constants</a>
+<a onclick="go('utils')">Utility Functions</a>
+<a onclick="go('factories')">Factory Functions</a>
+</nav>
+<main class="main">
+
+<div class="page active" id="p-quick">
+<h1>Quick Start</h1>
+<pre><code>import vex
+
+view = (
+    vex.vex()
+    .h2("Hello World")
+    .text("This is a Components V2 message.")
+    .button(
+        vex.button()
+        .label("Click me")
+        .primary()
+        .on_click(lambda i: i.response.send_message("Clicked!", ephemeral=True))
+    )
+)
+
+await view.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+<h2>What is Vex V2</h2>
+<p>A fluent, minimal builder library for Discord Components V2 (Layout Views) in Python. Vex wraps discord.py V2 primitives with chainable APIs, pre-built paginators, confirmation flows, modals, cooldown utilities, and a lightweight command help registry.</p>
+</div>
+
+<div class="page" id="p-vex">
+<h1>Vex</h1>
+<p>Inherits discord.ui.LayoutView. The primary canvas for V2 messages.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>lock_to(*user_ids, message="...")</code></td><td>Restrict interaction to specific user IDs.</td></tr>
+<tr><td><code>unlock()</code></td><td>Remove the user lock.</td></tr>
+<tr><td><code>on_timeout_do(callback)</code></td><td>Set a coroutine to run on timeout.</td></tr>
+<tr><td><code>text(content, id=None)</code></td><td>Add a TextDisplay component.</td></tr>
+<tr><td><code>write / line / paragraph / display / label / put / emit</code></td><td>Aliases for text.</td></tr>
+<tr><td><code>heading(content, level=1, id=None)</code></td><td>Add a markdown heading.</td></tr>
+<tr><td><code>h1 / h2 / h3</code></td><td>Shorthand for heading with fixed levels.</td></tr>
+<tr><td><code>bold(content, id=None)</code></td><td>Bold text.</td></tr>
+<tr><td><code>italic(content, id=None)</code></td><td>Italic text.</td></tr>
+<tr><td><code>underline(content, id=None)</code></td><td>Underlined text.</td></tr>
+<tr><td><code>strikethrough(content, id=None)</code></td><td>Strikethrough text.</td></tr>
+<tr><td><code>code(content, lang="", id=None)</code></td><td>Code block.</td></tr>
+<tr><td><code>inline_code(content, id=None)</code></td><td>Inline code.</td></tr>
+<tr><td><code>quote / blockquote(content, id=None)</code></td><td>Blockquote line.</td></tr>
+<tr><td><code>field(name, value, id=None)</code></td><td>Key-value line.</td></tr>
+<tr><td><code>kv(key, value, id=None)</code></td><td>Alias for field.</td></tr>
+<tr><td><code>fields(mapping)</code></td><td>Batch add fields from a dict.</td></tr>
+<tr><td><code>mention_user(user_id, id=None)</code></td><td>User mention string.</td></tr>
+<tr><td><code>mention_role(role_id, id=None)</code></td><td>Role mention string.</td></tr>
+<tr><td><code>mention_channel(channel_id, id=None)</code></td><td>Channel mention string.</td></tr>
+<tr><td><code>timestamp(dt_or_ts, fmt="f", id=None)</code></td><td>Discord timestamp.</td></tr>
+<tr><td><code>relative(dt_or_ts, id=None)</code></td><td>Relative timestamp.</td></tr>
+<tr><td><code>separator(large=False, visible=True, id=None)</code></td><td>Add a Separator.</td></tr>
+<tr><td><code>divider / rule / hr</code></td><td>Visible separator aliases.</td></tr>
+<tr><td><code>gap / spacer / pad</code></td><td>Invisible separator aliases.</td></tr>
+<tr><td><code>large_separator / large_divider / large_gap / small_separator</code></td><td>Size shorthands.</td></tr>
+<tr><td><code>section(builder)</code></td><td>Add a built Section.</td></tr>
+<tr><td><code>aside / panel / sidebar</code></td><td>Aliases for section.</td></tr>
+<tr><td><code>action_row(builder)</code></td><td>Add a built ActionRow.</td></tr>
+<tr><td><code>row / buttons / controls / toolbar / actions</code></td><td>Aliases for action_row.</td></tr>
+<tr><td><code>gallery(builder)</code></td><td>Add a built MediaGallery.</td></tr>
+<tr><td><code>images / media / photos / grid</code></td><td>Aliases for gallery.</td></tr>
+<tr><td><code>container(builder)</code></td><td>Add a built Container.</td></tr>
+<tr><td><code>box / card / block / frame / embed / group / wrap</code></td><td>Aliases for container.</td></tr>
+<tr><td><code>send_to(target, content=None, files=None, allowed_mentions=None)</code></td><td>Send to a messageable.</td></tr>
+<tr><td><code>send / dispatch / publish / post</code></td><td>Aliases for send_to.</td></tr>
+<tr><td><code>reply_to(interaction, ephemeral=False, files=None, allowed_mentions=None)</code></td><td>Reply to an interaction.</td></tr>
+<tr><td><code>respond / answer / reply / fire</code></td><td>Aliases for reply_to.</td></tr>
+<tr><td><code>edit(interaction, allowed_mentions=None)</code></td><td>Edit the interaction message.</td></tr>
+<tr><td><code>update / patch / refresh / mutate</code></td><td>Aliases for edit.</td></tr>
+<tr><td><code>defer(interaction, ephemeral=False, thinking=False)</code></td><td>Safely defer.</td></tr>
+<tr><td><code>delete(interaction)</code></td><td>Safely delete the interaction response.</td></tr>
+<tr><td><code>cooldown(rate, per, bucket=BucketType.user)</code></td><td>Attach a cooldown mapping.</td></tr>
+<tr><td><code>slow / limit / throttle / ratelimit</code></td><td>Aliases for cooldown.</td></tr>
+<tr><td><code>reset_cooldown(message)</code></td><td>Reset the cooldown bucket.</td></tr>
+<tr><td><code>clear_cooldown(message)</code></td><td>Alias for reset_cooldown.</td></tr>
+<tr><td><code>get_cooldown(message)</code></td><td>Get the Cooldown bucket.</td></tr>
+<tr><td><code>is_cooled(message)</code></td><td>Check if currently rate-limited.</td></tr>
+<tr><td><code>retry_after(message)</code></td><td>Get remaining cooldown seconds.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>view = (
+    vex.vex()
+    .lock_to(interaction.user.id)
+    .h2("Profile")
+    .field("Name", interaction.user.name)
+    .field("ID", str(interaction.user.id))
+    .separator()
+    .bold("Actions")
+    .button(
+        vex.button()
+        .label("Delete")
+        .danger()
+        .on_click(on_delete)
+    )
+)
+await view.reply_to(interaction, ephemeral=True)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-button">
+<h1>ButtonBuilder</h1>
+<p>Chainable builder for discord.ui.Button.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>label(text)</code> / <code>text / caption / title / name</code></td><td>Set the button label.</td></tr>
+<tr><td><code>primary()</code> / <code>blurple / blue</code></td><td>Set style to primary.</td></tr>
+<tr><td><code>secondary()</code> / <code>grey / gray / muted</code></td><td>Set style to secondary.</td></tr>
+<tr><td><code>success()</code> / <code>green / confirm / positive</code></td><td>Set style to success.</td></tr>
+<tr><td><code>danger()</code> / <code>red / destructive / negative / warning</code></td><td>Set style to danger.</td></tr>
+<tr><td><code>premium(sku_id)</code> / <code>sku(sku_id)</code></td><td>Set style to premium with SKU.</td></tr>
+<tr><td><code>link(url)</code> / <code>url / href / navigate</code></td><td>Set style to link with URL.</td></tr>
+<tr><td><code>emoji(value)</code> / <code>icon / reaction</code></td><td>Set emoji.</td></tr>
+<tr><td><code>disabled(state=True)</code> / <code>locked / inactive</code></td><td>Disable the button.</td></tr>
+<tr><td><code>enabled(state=True)</code> / <code>unlocked / active</code></td><td>Enable the button.</td></tr>
+<tr><td><code>row(value)</code> / <code>position / slot</code></td><td>Set the action row slot.</td></tr>
+<tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
+<tr><td><code>custom_id(value)</code> / <code>cid</code></td><td>Set custom ID.</td></tr>
+<tr><td><code>on_click(callback)</code> / <code>handler / action / callback</code></td><td>Attach an interaction callback.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.Button.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>btn = (
+    vex.button()
+    .label("Approve")
+    .success()
+    .emoji("✅")
+    .row(0)
+    .on_click(handle_approve)
+    .build()
+)
+
+link_btn = (
+    vex.button()
+    .label("Docs")
+    .link("https://example.com")
+    .build()
+)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-select">
+<h1>SelectBuilder</h1>
+<p>Chainable builder for discord.ui.Select (string select).</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>option(label, value)</code></td><td>Start a SelectOptionBuilder (captures on build).</td></tr>
+<tr><td><code>add(label, value, description=None, emoji=None, default=False)</code></td><td>Add an option directly.</td></tr>
+<tr><td><code>choice / item</code></td><td>Aliases for add.</td></tr>
+<tr><td><code>placeholder(text)</code> / <code>hint / prompt</code></td><td>Set placeholder.</td></tr>
+<tr><td><code>custom_id(value)</code> / <code>cid</code></td><td>Set custom ID.</td></tr>
+<tr><td><code>min(value)</code></td><td>Set min_values.</td></tr>
+<tr><td><code>max(value)</code></td><td>Set max_values.</td></tr>
+<tr><td><code>range(min_val, max_val)</code></td><td>Set both values.</td></tr>
+<tr><td><code>multi(max_val=25)</code></td><td>Set max_values for multi-select.</td></tr>
+<tr><td><code>disabled(state=True)</code> / <code>locked</code></td><td>Disable the select.</td></tr>
+<tr><td><code>row(value)</code></td><td>Set row slot.</td></tr>
+<tr><td><code>on_select(callback)</code> / <code>handler / callback</code></td><td>Attach callback.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.Select.</td></tr>
+</table>
+<h2>SelectOptionBuilder</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>description(text)</code> / <code>desc</code></td><td>Set option description.</td></tr>
+<tr><td><code>emoji(value)</code> / <code>icon</code></td><td>Set option emoji.</td></tr>
+<tr><td><code>default(state=True)</code> / <code>selected</code></td><td>Mark as default.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.SelectOption.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>sel = (
+    vex.select()
+    .placeholder("Pick a colour")
+    .custom_id("colour_pick")
+    .add("Red", "red", emoji="🔴")
+    .add("Blue", "blue", emoji="🔵")
+    .add("Green", "green", emoji="🟢")
+    .on_select(on_colour)
+    .build()
+)
+
+opt = (
+    vex.select()
+    .option("A", "a")
+    .description("Option A")
+    .default(True)
+    .build()
+)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-typed_select">
+<h1>TypedSelectBuilder</h1>
+<p>Builder for ChannelSelect, UserSelect, RoleSelect, MentionableSelect.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>placeholder / hint / prompt</code></td><td>Set placeholder.</td></tr>
+<tr><td><code>custom_id / cid</code></td><td>Set custom ID.</td></tr>
+<tr><td><code>min / max / range / multi</code></td><td>Value constraints.</td></tr>
+<tr><td><code>channel_types(*types)</code></td><td>Restrict channel types.</td></tr>
+<tr><td><code>text_only()</code></td><td>Restrict to text channels.</td></tr>
+<tr><td><code>voice_only()</code></td><td>Restrict to voice channels.</td></tr>
+<tr><td><code>defaults(values)</code></td><td>Set default selected values.</td></tr>
+<tr><td><code>disabled / locked</code></td><td>Disable.</td></tr>
+<tr><td><code>row(value)</code></td><td>Set row.</td></tr>
+<tr><td><code>on_select / handler / callback</code></td><td>Attach callback.</td></tr>
+<tr><td><code>build()</code></td><td>Return the typed select instance.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>ch_sel = (
+    vex.channel_select()
+    .placeholder("Select a channel")
+    .text_only()
+    .on_select(on_channel)
+    .build()
+)
+
+user_sel = (
+    vex.user_select()
+    .placeholder("Mention a user")
+    .multi(5)
+    .build()
+)
+
+role_sel = (
+    vex.role_select()
+    .placeholder("Pick a role")
+    .build()
+)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-action_row">
+<h1>ActionRowBuilder</h1>
+<p>Groups buttons and selects into a single ActionRow.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>add / push / insert / append / put / attach(item)</code></td><td>Add a button or select.</td></tr>
+<tr><td><code>button(builder)</code> / <code>btn</code></td><td>Build and add a ButtonBuilder.</td></tr>
+<tr><td><code>select(builder)</code> / <code>dropdown</code></td><td>Build and add a SelectBuilder.</td></tr>
+<tr><td><code>channel_select / user_select / role_select / mentionable_select(builder)</code></td><td>Build and add typed selects.</td></tr>
+<tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.ActionRow.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>row = (
+    vex.action_row()
+    .button(
+        vex.button()
+        .label("Yes")
+        .success()
+    )
+    .button(
+        vex.button()
+        .label("No")
+        .danger()
+    )
+    .build()
+)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-section">
+<h1>SectionBuilder</h1>
+<p>Builds discord.ui.Section (text list + accessory).</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>text / line / write / paragraph / add / put / push(content)</code></td><td>Add text lines.</td></tr>
+<tr><td><code>display(item)</code></td><td>Add a TextDisplay directly.</td></tr>
+<tr><td><code>bold / italic(content)</code></td><td>Styled text.</td></tr>
+<tr><td><code>code(content, lang="")</code></td><td>Code block.</td></tr>
+<tr><td><code>quote(content)</code></td><td>Blockquote.</td></tr>
+<tr><td><code>heading(content, level=2)</code></td><td>Heading.</td></tr>
+<tr><td><code>accessory(item)</code> / <code>aside / attachment</code></td><td>Set accessory (Button or Thumbnail).</td></tr>
+<tr><td><code>thumbnail(url, description="", spoiler=False, id=None)</code></td><td>Set a thumbnail accessory.</td></tr>
+<tr><td><code>image / photo / icon / avatar</code></td><td>Aliases for thumbnail.</td></tr>
+<tr><td><code>button_accessory(builder)</code> / <code>button</code></td><td>Build a button and set as accessory.</td></tr>
+<tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.Section.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>sec = (
+    vex.section()
+    .heading("Announcement", 1)
+    .text("New update is live.")
+    .thumbnail("https://cdn.example.com/icon.png")
+    .build()
+)
+
+view = vex.vex().section(sec)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-gallery">
+<h1>GalleryBuilder</h1>
+<p>Builds discord.ui.MediaGallery.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>add(media, description="", spoiler=False)</code></td><td>Add a MediaGalleryItem.</td></tr>
+<tr><td><code>image / animated / gif / photo / media</code></td><td>Aliases for add with URL.</td></tr>
+<tr><td><code>attach / upload(file, description="")</code></td><td>Add a discord.File.</td></tr>
+<tr><td><code>push / insert / append</code></td><td>Aliases for add with URL.</td></tr>
+<tr><td><code>spoiler / hidden(url, description="")</code></td><td>Add with spoiler=True.</td></tr>
+<tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.MediaGallery.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>gal = (
+    vex.gallery()
+    .image("https://cdn.example.com/a.png", description="Screenshot A")
+    .image("https://cdn.example.com/b.png", description="Screenshot B")
+    .spoiler("https://cdn.example.com/c.png")
+    .build()
+)
+
+view = vex.vex().gallery(gal)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-container">
+<h1>ContainerBuilder</h1>
+<p>Builds discord.ui.Container (the V2 card wrapper).</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>add / push / append / insert / attach(component)</code></td><td>Add any resolved component.</td></tr>
+<tr><td><code>text / write / line / paragraph / display(content, id=None)</code></td><td>Add TextDisplay.</td></tr>
+<tr><td><code>heading / h1 / h2 / h3</code></td><td>Add headings.</td></tr>
+<tr><td><code>bold / italic / underline / strikethrough</code></td><td>Styled text.</td></tr>
+<tr><td><code>code / inline_code</code></td><td>Code blocks.</td></tr>
+<tr><td><code>quote</code></td><td>Blockquote.</td></tr>
+<tr><td><code>field / kv(name, value)</code></td><td>Key-value line.</td></tr>
+<tr><td><code>fields(mapping)</code></td><td>Batch fields.</td></tr>
+<tr><td><code>separator(large=False, visible=True, id=None)</code></td><td>Add separator.</td></tr>
+<tr><td><code>divider / rule / gap / spacer / large_separator / large_divider / large_gap / small_separator</code></td><td>Aliases.</td></tr>
+<tr><td><code>section(builder)</code></td><td>Add a SectionBuilder.</td></tr>
+<tr><td><code>action_row(builder)</code> / <code>row</code></td><td>Add an ActionRowBuilder.</td></tr>
+<tr><td><code>button(builder, inline=True)</code></td><td>Add a button; auto-bundles into inline ActionRow if possible.</td></tr>
+<tr><td><code>btn</code></td><td>Alias for button.</td></tr>
+<tr><td><code>gallery(builder)</code></td><td>Add a GalleryBuilder.</td></tr>
+<tr><td><code>nest / child / inner(builder)</code></td><td>Nest a ContainerBuilder.</td></tr>
+<tr><td><code>accent(color)</code> / <code>color / colour / border / tint / hue</code></td><td>Set accent color.</td></tr>
+<tr><td><code>hex(value)</code></td><td>Set accent from hex string.</td></tr>
+<tr><td><code>rgb(r, g, b)</code></td><td>Set accent from RGB.</td></tr>
+<tr><td><code>spoiler / hidden(state=True)</code></td><td>Mark as spoiler.</td></tr>
+<tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.Container.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>card = (
+    vex.container()
+    .hex("#5865f2")
+    .h2("Server Info")
+    .field("Members", "1,240")
+    .field("Boosts", "24")
+    .separator()
+    .button(
+        vex.button()
+        .label("Invite")
+        .link("https://discord.gg/abc")
+    )
+    .build()
+)
+
+view = vex.vex().container(card)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-text_input">
+<h1>TextInputBuilder</h1>
+<p>Builds discord.ui.TextInput for modals.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>label(text)</code></td><td>Set label.</td></tr>
+<tr><td><code>short()</code> / <code>line</code></td><td>Set style to short.</td></tr>
+<tr><td><code>paragraph()</code> / <code>long / multiline</code></td><td>Set style to paragraph.</td></tr>
+<tr><td><code>placeholder / hint(text)</code></td><td>Set placeholder.</td></tr>
+<tr><td><code>default / prefill(text)</code></td><td>Set default value.</td></tr>
+<tr><td><code>required(state=True)</code></td><td>Set required.</td></tr>
+<tr><td><code>optional()</code></td><td>Set not required.</td></tr>
+<tr><td><code>min / max / length(min, max)</code></td><td>Length constraints.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.TextInput.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>inp = (
+    vex.text_input("reason", "Reason")
+    .paragraph()
+    .placeholder("Why are you reporting this?")
+    .required(True)
+    .length(10, 500)
+    .build()
+)
+
+short_inp = (
+    vex.text_input("name", "Display Name")
+    .short()
+    .max(32)
+    .build()
+)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-modal">
+<h1>ModalBuilder</h1>
+<p>Builds discord.ui.Modal via _VexModal.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>title / name(text)</code></td><td>Set modal title.</td></tr>
+<tr><td><code>timeout(seconds)</code></td><td>Set timeout.</td></tr>
+<tr><td><code>custom_id / cid(value)</code></td><td>Set custom ID.</td></tr>
+<tr><td><code>field(key, label, **kwargs)</code></td><td>Add a text input field.</td></tr>
+<tr><td><code>short(key, label, **kwargs)</code></td><td>Add a short field.</td></tr>
+<tr><td><code>paragraph(key, label, **kwargs)</code></td><td>Add a paragraph field.</td></tr>
+<tr><td><code>input / add(builder)</code></td><td>Add a TextInputBuilder.</td></tr>
+<tr><td><code>on_submit / handler(callback)</code></td><td>Set submit callback (interaction, values_dict).</td></tr>
+<tr><td><code>on_error(callback)</code></td><td>Set error callback.</td></tr>
+<tr><td><code>build()</code></td><td>Return the modal instance.</td></tr>
+<tr><td><code>send / open / prompt(interaction)</code></td><td>Send the modal.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>modal = (
+    vex.modal("Report User")
+    .field("user_id", "User ID")
+    .field("reason", "Reason", paragraph=True, placeholder="Explain...")
+    .on_submit(on_report)
+    .build()
+)
+
+await interaction.response.send_modal(modal)
+
+async def on_report(interaction, values):
+    uid = values["user_id"]
+    reason = values["reason"]
+    await interaction.response.send_message(f"Reported {uid} for: {reason}", ephemeral=True)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-pagination">
+<h1>Pagination</h1>
+<p>Multiple paginator implementations for browsing pages of data.</p>
+<h2>Paginator</h2>
+<p>Standard page wrapper with first/prev/next/last buttons.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>current</code></td><td>Current page index.</td></tr>
+<tr><td><code>total</code></td><td>Total pages.</td></tr>
+<tr><td><code>at_start / at_end</code></td><td>Boundary booleans.</td></tr>
+<tr><td><code>current_page</code></td><td>Current page data.</td></tr>
+<tr><td><code>jump(index)</code> / <code>seek / go_to / page</code></td><td>Jump to index.</td></tr>
+<tr><td><code>send_to / send / dispatch(target, files=None)</code></td><td>Send to channel.</td></tr>
+<tr><td><code>reply_to / respond / answer / reply(interaction, ephemeral=None, files=None)</code></td><td>Reply to interaction.</td></tr>
+</table>
+<h2>JumpSelectPaginator</h2>
+<p>Extends Paginator with a dropdown to jump to any page.</p>
+<h2>GroupedPaginator</h2>
+<p>Tabbed paginator switching between PageGroup objects.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>current_group</code></td><td>Active PageGroup.</td></tr>
+<tr><td><code>current_page</code></td><td>Active page within group.</td></tr>
+<tr><td><code>send_to(target)</code></td><td>Send to channel.</td></tr>
+<tr><td><code>reply_to / respond(interaction, ephemeral=None)</code></td><td>Reply to interaction.</td></tr>
+</table>
+<h2>InfinitePaginator</h2>
+<p>Async data pagination. Accepts a fetch(offset) coroutine and caches pages on demand.</p>
+<h2>ScrollPaginator</h2>
+<p>Minimal prev/next with a page counter text display.</p>
+<h2>Example</h2>
+<pre><code>pages = ["Page 1 content", "Page 2 content", "Page 3 content"]
+
+def renderer(idx, total, page):
+    return vex.container().text(page).build()
+
+pg = vex.paginator(pages, renderer=renderer)
+await pg.reply_to(interaction, ephemeral=True)
+
+jump_pg = vex.paginator(pages, renderer=renderer)
+
+inf = InfinitePaginator(
+    fetch=lambda offset: fetch_items(offset, 10),
+    renderer=renderer,
+    page_size=10
+)
+await inf.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-confirmation">
+<h1>Confirmation Flows</h1>
+<p>Views that ask the user to confirm or cancel an action.</p>
+<h2>ConfirmView</h2>
+<p>Yes/no confirmation with two buttons.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>result</code></td><td>True, False, or None.</td></tr>
+<tr><td><code>confirmed / cancelled</code></td><td>Boolean checks.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable boolean result.</td></tr>
+<tr><td><code>send_to(target)</code></td><td>Send and wait.</td></tr>
+<tr><td><code>reply_to / respond / ask / prompt_user / confirm(interaction)</code></td><td>Reply and wait.</td></tr>
+</table>
+<h2>MultiConfirmView</h2>
+<p>Requires a threshold of distinct users to confirm.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>confirmed_by</code></td><td>Set of user IDs who confirmed.</td></tr>
+<tr><td><code>cancelled</code></td><td>Whether cancelled.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable boolean.</td></tr>
+<tr><td><code>reply_to / respond / send_to</code></td><td>Send/reply methods.</td></tr>
+</table>
+<h2>TimedConfirmView</h2>
+<p>Countdown confirmation that updates every second.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>result</code></td><td>True, False, or None.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable boolean.</td></tr>
+<tr><td><code>reply_to / respond / send_to</code></td><td>Send/reply methods.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>cv = vex.confirm("Delete this file?", owner_id=interaction.user.id)
+ok = await cv.ask(interaction)
+if ok:
+    await interaction.followup.send("Deleted.", ephemeral=True)
+
+mc = vex.multi_confirm("Approve merge?", threshold=3, timeout=120)
+approved = await mc.respond(interaction)
+
+tc = vex.timed_confirm("Confirm ban?", seconds=15, owner_id=interaction.user.id)
+result = await tc.confirm(interaction)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-choice">
+<h1>Choice & Select Prompts</h1>
+<p>Views that present options and return the user's selection.</p>
+<h2>ChoiceView</h2>
+<p>Presents up to 5 buttons mapped to choice keys.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>result</code></td><td>Selected key string or None.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable result.</td></tr>
+<tr><td><code>reply_to / respond / send_to</code></td><td>Send/reply methods.</td></tr>
+</table>
+<h2>SelectMenu</h2>
+<p>Presents a Select dropdown and returns the chosen values.</p>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>result</code></td><td>List of selected value strings or None.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable result.</td></tr>
+<tr><td><code>reply_to / respond / send_to</code></td><td>Send/reply methods.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>choices = {"a": "Option A", "b": "Option B", "c": "Option C"}
+cv = vex.choice(choices, prompt="Pick one:", owner_id=interaction.user.id)
+key = await cv.respond(interaction)
+
+options = [("Red", "red"), ("Blue", "blue"), ("Green", "green")]
+sm = vex.select_menu(options, prompt="Pick a colour:", owner_id=interaction.user.id)
+vals = await sm.reply_to(interaction)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-pickers">
+<h1>Entity Pickers</h1>
+<p>Views that return resolved Discord objects.</p>
+<p>All pickers support reply_to, respond, send_to, wait_result, and owner_id locking.</p>
+<h2>RolePickerView</h2>
+<p>Returns a list of discord.Role objects.</p>
+<h2>ChannelPickerView</h2>
+<p>Returns a list of channel objects. Accepts channel_types filter.</p>
+<h2>UserPickerView</h2>
+<p>Returns a list of discord.Member or discord.User objects.</p>
+<h2>Example</h2>
+<pre><code>roles = vex.role_picker("Select roles to assign:", max_values=5)
+selected = await roles.respond(interaction)
+for role in selected:
+    await interaction.user.add_roles(role)
+
+channels = vex.channel_picker_view("Select a log channel:", channel_types=[discord.ChannelType.text])
+ch = await channels.reply_to(interaction)
+
+users = vex.user_picker_view("Select a moderator:", owner_id=interaction.user.id)
+mods = await users.ask(interaction)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-help_registry">
+<h1>Help Registry</h1>
+<p>Lightweight command metadata system with decorators and search.</p>
+<h2>CommandInfo</h2>
+<table>
+<tr><th>Field</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>Command name.</td></tr>
+<tr><td><code>func</code></td><td>Callable.</td></tr>
+<tr><td><code>description</code></td><td>Help description.</td></tr>
+<tr><td><code>syntax</code></td><td>Usage syntax.</td></tr>
+<tr><td><code>example</code></td><td>Example usage.</td></tr>
+<tr><td><code>category</code></td><td>Category string.</td></tr>
+<tr><td><code>hidden</code></td><td>Whether hidden from help.</td></tr>
+<tr><td><code>aliases</code></td><td>List of alias strings.</td></tr>
+</table>
+<h2>HelpRegistry</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>scan(obj)</code></td><td>Scan an instance/class for decorated commands.</td></tr>
+<tr><td><code>get(name)</code></td><td>Retrieve CommandInfo by name.</td></tr>
+<tr><td><code>list(category=None, include_hidden=False)</code></td><td>List commands.</td></tr>
+<tr><td><code>help_card(name)</code></td><td>Return a ContainerBuilder with command details.</td></tr>
+<tr><td><code>help_all(...)</code></td><td>Return a list of help card containers.</td></tr>
+<tr><td><code>paginator(...)</code></td><td>Return a Paginator of help cards.</td></tr>
+</table>
+<h2>Decorators</h2>
+<table>
+<tr><th>Decorator</th><th>Description</th></tr>
+<tr><td><code>cmd(name=None, aliases=None)</code></td><td>Attach CommandInfo to a function.</td></tr>
+<tr><td><code>cmd_desc(text)</code></td><td>Set description.</td></tr>
+<tr><td><code>cmd_syntax(text)</code></td><td>Set syntax.</td></tr>
+<tr><td><code>cmd_example(text)</code></td><td>Set example.</td></tr>
+<tr><td><code>cmd_category(text)</code></td><td>Set category.</td></tr>
+<tr><td><code>cmd_hidden(state=True)</code></td><td>Set hidden flag.</td></tr>
+<tr><td><code>cmd_alias(alias)</code></td><td>Append an alias.</td></tr>
+</table>
+<h2>Registry Helpers</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>search_commands(registry, query, limit=5, include_hidden=False)</code></td><td>Fuzzy search by name/alias/description.</td></tr>
+<tr><td><code>registry_to_select(registry, placeholder="...", category=None)</code></td><td>Build a SelectBuilder of commands.</td></tr>
+<tr><td><code>registry_category_select(registry, placeholder="...")</code></td><td>Build a SelectBuilder of categories.</td></tr>
+<tr><td><code>registry_categories(registry)</code></td><td>Return list of category strings.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>@vex.cmd("ping", aliases=["p"])
+@vex.cmd_desc("Check bot latency.")
+@vex.cmd_syntax(".ping")
+@vex.cmd_category("Utility")
+async def ping_cmd(interaction):
+    await interaction.response.send_message("Pong!")
+
+reg = vex.registry()
+reg.scan(my_cog)
+
+for info in reg.list():
+    print(info.name, info.description)
+
+help_pg = reg.paginator()
+await help_pg.reply_to(interaction, ephemeral=True)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-cooldowns">
+<h1>Cooldowns</h1>
+<p>Rate-limiting utilities for commands and interactions.</p>
+<h2>CooldownStore</h2>
+<p>Per-message cooldown bucket wrapper.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>check(message)</code></td><td>Update rate limit; returns retry-after seconds.</td></tr>
+<tr><td><code>is_limited(message)</code></td><td>Boolean check.</td></tr>
+<tr><td><code>reset(message)</code></td><td>Reset the bucket.</td></tr>
+<tr><td><code>retry_after(message)</code></td><td>Get retry-after without mutating.</td></tr>
+<tr><td><code>remaining(message)</code></td><td>Approximate remaining uses.</td></tr>
+</table>
+<h2>GlobalCooldown</h2>
+<p>Named cooldown stores sharing the same rate/period.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>store(name)</code></td><td>Get or create a CooldownStore by name.</td></tr>
+<tr><td><code>check(name, message)</code></td><td>Check a named store.</td></tr>
+<tr><td><code>is_limited(name, message)</code></td><td>Boolean check.</td></tr>
+<tr><td><code>reset(name, message)</code></td><td>Reset a named store.</td></tr>
+<tr><td><code>reset_all(message)</code></td><td>Reset every store for the message.</td></tr>
+</table>
+<h2>CooldownCard</h2>
+<p>Pre-styled container for cooldown messages.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>build(retry_after, title="Slow down")</code></td><td>Return a yellow ContainerBuilder.</td></tr>
+<tr><td><code>from_store(store, message)</code></td><td>Build from a CooldownStore or return None.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>store = vex.cooldown_store(rate=2, per=5.0)
+
+async def my_cmd(interaction):
+    retry = store.check(interaction.message)
+    if retry > 0:
+        card = vex.cooldown_card(retry)
+        await interaction.response.send_message(view=vex.vex().container(card), ephemeral=True)
+        return
+    await interaction.response.send_message("OK")
+
+global_cd = vex.global_cooldown(rate=3, per=10.0)
+retry = global_cd.check("cmd_name", message)
+if global_cd.is_limited("cmd_name", message):
+    pass</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-cards">
+<h1>Utility Cards</h1>
+<p>Pre-styled ContainerBuilder factories for common UI patterns.</p>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>error_card(message, title="Error")</code></td><td>Red accent container.</td></tr>
+<tr><td><code>success_card(message, title="Success")</code></td><td>Green accent container.</td></tr>
+<tr><td><code>info_card(message, title="Info")</code></td><td>Blue accent container.</td></tr>
+<tr><td><code>audit_card(action, actor, target=None, reason=None, fields=None, color=None)</code></td><td>Audit log style container.</td></tr>
+<tr><td><code>diff_card(title="Changes", before={}, after={}, color=None)</code></td><td>Before/after diff container.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>err = vex.error_card("You do not have permission.")
+await vex.vex().container(err).reply_to(interaction, ephemeral=True)
+
+ok = vex.success_card("Settings saved.")
+await vex.vex().container(ok).reply_to(interaction, ephemeral=True)
+
+audit = vex.audit_card(
+    action="Ban",
+    actor=interaction.user,
+    target=member,
+    reason="Spam",
+    fields={"Duration": "7 days"},
+    color="#ed4245"
+)
+await channel.send(view=vex.vex().container(audit))
+
+diff = vex.diff_card(
+    title="Role Changes",
+    before={"Name": "Mod", "Color": "#000000"},
+    after={"Name": "Moderator", "Color": "#ffffff"}
+)
+await channel.send(view=vex.vex().container(diff))</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-errors">
+<h1>Error Constants</h1>
+<p>VexError provides static strings for common bot error responses.</p>
+<h2>Permissions</h2>
+<p>MISSING_PERMISSIONS, BOT_MISSING_PERMISSIONS, FORBIDDEN, OWNER_ONLY, HIERARCHY_ERROR, USER_HIERARCHY_ERROR</p>
+<h2>Context</h2>
+<p>SERVER_ONLY, DM_ONLY, NSFW_ONLY</p>
+<h2>Not Found</h2>
+<p>NOT_FOUND, CHANNEL_NOT_FOUND, ROLE_NOT_FOUND, MEMBER_NOT_FOUND, USER_NOT_FOUND, GUILD_NOT_FOUND, MESSAGE_NOT_FOUND, EMOJI_NOT_FOUND</p>
+<h2>Arguments</h2>
+<p>INVALID_ARGUMENT, MISSING_ARGUMENT, TOO_MANY_ARGUMENTS, BAD_UNION, CONVERSION_FAILED, EXPECTED_INT, EXPECTED_FLOAT, EXPECTED_BOOL, VALUE_TOO_LONG, VALUE_TOO_SHORT, VALUE_OUT_OF_RANGE</p>
+<h2>State</h2>
+<p>ALREADY_EXISTS, ALREADY_BANNED, NOT_BANNED, ALREADY_MUTED, NOT_MUTED, SELF_ACTION, BOT_ACTION, ALREADY_IN_VOICE, NOT_IN_VOICE, BOT_NOT_IN_VOICE, VOICE_CHANNEL_FULL</p>
+<h2>Interaction</h2>
+<p>TIMED_OUT, INTERACTION_FAILED, ALREADY_RESPONDED, UNKNOWN_INTERACTION, CONFIRM_CANCELLED, CONFIRM_TIMEOUT, NOT_CONFIRMED</p>
+<h2>External</h2>
+<p>HTTP_ERROR, RATE_LIMITED, FORBIDDEN_RESPONSE, NOT_FOUND_RESPONSE, API_ERROR, API_TIMEOUT, PARSE_ERROR, DATABASE_ERROR</p>
+<h2>Config</h2>
+<p>CONFIG_MISSING, FEATURE_DISABLED, SETUP_REQUIRED, PREMIUM_REQUIRED, VERIFICATION_REQUIRED, AGE_RESTRICTED, TERMS_REQUIRED</p>
+<h2>Access</h2>
+<p>BLACKLISTED, SERVER_BLACKLISTED, MAINTENANCE</p>
+<h2>Input</h2>
+<p>ATTACHMENT_REQUIRED, INVALID_ATTACHMENT, ATTACHMENT_TOO_LARGE, NO_RESULTS, EMPTY_INPUT, DUPLICATE_INPUT, NUMERIC_ONLY, TEXT_ONLY, URL_REQUIRED, INVALID_URL, IMAGE_REQUIRED, INVALID_IMAGE, INVALID_COLOR, INVALID_DATE, INVALID_TIME, INVALID_DURATION, INVALID_ID, INVALID_MENTION, INVALID_COMMAND, SUBCOMMAND_REQUIRED, UNKNOWN_SUBCOMMAND</p>
+<h2>Catch-all</h2>
+<p>UNEXPECTED, UNKNOWN</p>
+<h2>Example</h2>
+<pre><code>await interaction.response.send_message(vex.VexError.MISSING_PERMISSIONS, ephemeral=True)
+
+if not channel.nsfw:
+    await interaction.response.send_message(vex.VexError.NSFW_ONLY, ephemeral=True)
+    return</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-utils">
+<h1>Utility Functions</h1>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>edit_to_v2(message, view)</code></td><td>Edit a message to V2 (clears content/embeds, sets view).</td></tr>
+<tr><td><code>disable_all(view)</code></td><td>Walk all children and set disabled=True.</td></tr>
+<tr><td><code>freeze_view(view, interaction)</code></td><td>Disable all and edit the interaction message.</td></tr>
+<tr><td><code>safe_defer(interaction, ephemeral=False, thinking=False)</code></td><td>Defer only if not already responded.</td></tr>
+<tr><td><code>safe_edit(interaction, view=None, allowed_mentions=None)</code></td><td>Edit safely, swallowing HTTP exceptions.</td></tr>
+<tr><td><code>safe_delete(interaction)</code></td><td>Delete original response safely.</td></tr>
+</table>
+<h2>PromptInput</h2>
+<p>Message-based user input collector.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>ask(channel, user=None)</code></td><td>Wait for a message; return it or None on timeout.</td></tr>
+<tr><td><code>wait / collect(channel, user=None)</code></td><td>Aliases; collect returns message content string.</td></tr>
+</table>
+<h2>AutoDeleteView</h2>
+<p>Extends Vex. Deletes its own message on timeout.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>send_to(...)</code></td><td>Send and store message reference.</td></tr>
+<tr><td><code>reply_to(...)</code></td><td>Reply and store message reference.</td></tr>
+</table>
+<h2>GradientColours</h2>
+<p>Helper for role colour gradients.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>to_kwargs()</code></td><td>Return colour, secondary_colour, tertiary_colour dict.</td></tr>
+<tr><td><code>apply(role, reason=None)</code></td><td>Awaitable role edit.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>await vex.safe_defer(interaction, thinking=True)
+await vex.safe_edit(interaction, view=new_view)
+await vex.safe_delete(interaction)
+await vex.freeze_view(view, interaction)
+
+prompt = vex.prompt_input(bot, "What is your name?", timeout=30.0)
+msg = await prompt.ask(channel, user=interaction.user)
+if msg:
+    await channel.send(f"Hello {msg.content}")
+
+adv = vex.auto_delete(timeout=10)
+await adv.send_to(channel, content="This deletes in 10s")
+
+grad = vex.gradient("#ff0000", "#00ff00")
+await grad.apply(role, reason="Seasonal colour")</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-factories">
+<h1>Factory Functions</h1>
+<p>Top-level convenience constructors.</p>
+<table>
+<tr><th>Function</th><th>Returns</th></tr>
+<tr><td><code>vex(timeout=180)</code> / <code>new / build / create / make / layout / view / message</code></td><td>Vex</td></tr>
+<tr><td><code>button()</code> / <code>btn()</code></td><td>ButtonBuilder</td></tr>
+<tr><td><code>select()</code> / <code>dropdown()</code></td><td>SelectBuilder</td></tr>
+<tr><td><code>channel_select()</code> / <code>channel_picker()</code></td><td>TypedSelectBuilder("channel")</td></tr>
+<tr><td><code>user_select()</code> / <code>user_picker()</code></td><td>TypedSelectBuilder("user")</td></tr>
+<tr><td><code>role_select()</code> / <code>role_picker()</code></td><td>TypedSelectBuilder("role")</td></tr>
+<tr><td><code>mentionable_select()</code></td><td>TypedSelectBuilder("mentionable")</td></tr>
+<tr><td><code>action_row(id=None)</code> / <code>row(id=None)</code></td><td>ActionRowBuilder</td></tr>
+<tr><td><code>section()</code> / <code>aside()</code> / <code>panel()</code></td><td>SectionBuilder</td></tr>
+<tr><td><code>gallery(id=None)</code> / <code>images / media(id=None)</code></td><td>GalleryBuilder</td></tr>
+<tr><td><code>container(id=None)</code> / <code>box / card / frame(id=None)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>gradient(primary, secondary=None, tertiary=None)</code></td><td>GradientColours</td></tr>
+<tr><td><code>paginator(...)</code> / <code>paginate(...)</code> / <code>pages(...)</code></td><td>Paginator</td></tr>
+<tr><td><code>modal(title="Form")</code> / <code>form / prompt(title="Form")</code></td><td>ModalBuilder</td></tr>
+<tr><td><code>text_input(key, label)</code> / <code>field_input(key, label)</code></td><td>TextInputBuilder</td></tr>
+<tr><td><code>confirm_view(...)</code> / <code>confirm(...)</code> / <code>ask(...)</code></td><td>ConfirmView</td></tr>
+<tr><td><code>multi_confirm(...)</code></td><td>MultiConfirmView</td></tr>
+<tr><td><code>timed_confirm(...)</code></td><td>TimedConfirmView</td></tr>
+<tr><td><code>choice_view(...)</code> / <code>choice(...)</code></td><td>ChoiceView</td></tr>
+<tr><td><code>select_menu(...)</code> / <code>pick(...)</code></td><td>SelectMenu</td></tr>
+<tr><td><code>role_picker(...)</code></td><td>RolePickerView</td></tr>
+<tr><td><code>channel_picker_view(...)</code></td><td>ChannelPickerView</td></tr>
+<tr><td><code>user_picker_view(...)</code></td><td>UserPickerView</td></tr>
+<tr><td><code>prompt_input(...)</code> / <code>wait_input(...)</code></td><td>PromptInput</td></tr>
+<tr><td><code>auto_delete(timeout=30)</code></td><td>AutoDeleteView</td></tr>
+<tr><td><code>cooldown_store(...)</code></td><td>CooldownStore</td></tr>
+<tr><td><code>global_cooldown(...)</code></td><td>GlobalCooldown</td></tr>
+<tr><td><code>cooldown_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>audit_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>diff_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>grouped_paginator(...)</code></td><td>GroupedPaginator</td></tr>
+<tr><td><code>scroll_paginator(...)</code></td><td>ScrollPaginator</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>view = vex.new()
+btn = vex.btn().label("OK").primary()
+row = vex.row().btn(btn)
+card = vex.card().text("Hello")
+pg = vex.pages(data, renderer=render)
+mc = vex.multi_confirm(threshold=2)
+scroll = vex.scroll_paginator(pages, renderer=render)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+<hr>
+<p style="color:var(--text2);font-size:0.9em;">Vex V2 Docs &mdash; MIT License</p>
+</div>
+
+</main>
+</div>
+<script>
+function go(id){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('p-'+id).classList.add('active');
+    document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('nav').classList.remove('open');
+    document.querySelector('.overlay').classList.remove('open');
+}
+function toggle(){
+    document.getElementById('nav').classList.toggle('open');
+    document.querySelector('.overlay').classList.toggle('open');
+}
+function copy(btn){
+    const code=btn.parentElement.querySelector('code').innerText;
+    navigator.clipboard.writeText(code).then(()=>{
+        btn.textContent='Copied';
+        setTimeout(()=>btn.textContent='Copy',1200);
+    });
+}
+</script>
+</body>
+</html>
