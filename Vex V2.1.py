@@ -4352,3 +4352,203 @@ def diff_card(
     color: discord.Color | int | str | None = None,
 ) -> ContainerBuilder:
     return DiffCard.build(title=title, before=before, after=after, color=color)
+
+
+_PRESENCE_PROFILES: dict[str, dict[str, str]] = {
+    "desktop": {
+        "os": "Windows",
+        "browser": "Discord Client",
+        "device": "discord_client",
+    },
+    "mac": {
+        "os": "Mac OS X",
+        "browser": "Discord Client",
+        "device": "discord_client",
+    },
+    "linux": {
+        "os": "Linux",
+        "browser": "Discord Client",
+        "device": "discord_client",
+    },
+    "mobile": {
+        "os": "iOS",
+        "browser": "Discord iOS",
+        "device": "discord_ios",
+    },
+    "android": {
+        "os": "Android",
+        "browser": "Discord Android",
+        "device": "discord_android",
+    },
+    "vr": {
+        "os": "Android",
+        "browser": "Discord VR",
+        "device": "discord_vr",
+    },
+    "web": {
+        "os": "Windows",
+        "browser": "Chrome",
+        "device": "",
+    },
+    "embedded": {
+        "os": "Discord Embedded",
+        "browser": "Discord Embedded",
+        "device": "discord_embedded",
+    },
+}
+
+
+class PresenceHandler:
+    _active_profile: dict[str, str] | None = None
+    _original_identify: Any = None
+    _original_send: Any = None
+    _patched: bool = False
+
+    @classmethod
+    def _make_identify(cls) -> Any:
+        original = cls._original_identify
+
+        async def _patched_identify(self_ws: Any) -> None:
+            profile = cls._active_profile
+            if profile is not None:
+                self_ws.__dict__["_vex_presence_profile"] = profile
+            await original(self_ws)
+
+        return _patched_identify
+
+    @classmethod
+    def _make_send(cls) -> Any:
+        original_send = discord.gateway.DiscordWebSocket.send_as_json
+        cls._original_send = original_send
+
+        async def _patched_send(self_ws: Any, data: Any) -> None:
+            profile: dict[str, str] | None = self_ws.__dict__.get("_vex_presence_profile")
+            if profile is not None and isinstance(data, dict) and data.get("op") == discord.gateway.DiscordWebSocket.IDENTIFY:
+                d = data.setdefault("d", {})
+                props = d.setdefault("properties", {})
+                props["os"] = profile["os"]
+                props["browser"] = profile["browser"]
+                props["device"] = profile["device"]
+            await original_send(self_ws, data)
+
+        return _patched_send
+
+    _INVALIDATE_SESSION_MSG: str = '{"op":9,"d":false}'
+
+    @classmethod
+    def _schedule_reidentify(cls, bot: Any) -> None:
+        loop = getattr(bot, "loop", None)
+        if loop is not None and loop.is_running():
+            loop.create_task(cls.reidentify_all(bot))
+
+    @classmethod
+    def apply(cls, profile: str | dict[str, str], *, bot: Any = None) -> None:
+        if isinstance(profile, str):
+            resolved = _PRESENCE_PROFILES.get(profile.lower())
+            if resolved is None:
+                raise ValueError(f"Unknown presence profile '{profile}'. Valid options: {list(_PRESENCE_PROFILES)}")
+            cls._active_profile = resolved
+        else:
+            cls._active_profile = profile
+
+        if not cls._patched:
+            cls._original_identify = discord.gateway.DiscordWebSocket.identify
+            discord.gateway.DiscordWebSocket.identify = cls._make_identify()
+            discord.gateway.DiscordWebSocket.send_as_json = cls._make_send()
+            cls._patched = True
+
+        if bot is not None:
+            cls._schedule_reidentify(bot)
+
+    @classmethod
+    async def apply_async(cls, profile: str | dict[str, str], *, bot: Any) -> None:
+        cls.apply(profile)
+        await cls.reidentify_all(bot)
+
+    @classmethod
+    async def _invalidate_ws(cls, ws: Any) -> None:
+        try:
+            await ws.received_message(cls._INVALIDATE_SESSION_MSG)
+        except Exception:
+            pass
+
+    @classmethod
+    async def reidentify_all(cls, bot: Any) -> None:
+        raw_shards: dict[int, Any] = getattr(bot, "_AutoShardedClient__shards", {})
+        if raw_shards:
+            for shard in raw_shards.values():
+                ws = getattr(shard, "ws", None)
+                if ws is not None:
+                    await cls._invalidate_ws(ws)
+        else:
+            ws = getattr(bot, "ws", None)
+            if ws is not None:
+                await cls._invalidate_ws(ws)
+
+    @classmethod
+    def restore(cls, *, bot: Any = None) -> None:
+        if cls._patched:
+            if cls._original_identify is not None:
+                discord.gateway.DiscordWebSocket.identify = cls._original_identify
+                cls._original_identify = None
+            if cls._original_send is not None:
+                discord.gateway.DiscordWebSocket.send_as_json = cls._original_send
+                cls._original_send = None
+            cls._patched = False
+            cls._active_profile = None
+
+        if bot is not None:
+            cls._schedule_reidentify(bot)
+
+    @classmethod
+    async def restore_async(cls, *, bot: Any) -> None:
+        cls.restore()
+        await cls.reidentify_all(bot)
+
+    @classmethod
+    def current(cls) -> dict[str, str] | None:
+        return cls._active_profile
+
+    @classmethod
+    def profiles(cls) -> list[str]:
+        return list(_PRESENCE_PROFILES)
+
+    @classmethod
+    def desktop(cls, *, bot: Any = None) -> None:
+        cls.apply("desktop", bot=bot)
+
+    @classmethod
+    def mac(cls, *, bot: Any = None) -> None:
+        cls.apply("mac", bot=bot)
+
+    @classmethod
+    def linux(cls, *, bot: Any = None) -> None:
+        cls.apply("linux", bot=bot)
+
+    @classmethod
+    def mobile(cls, *, bot: Any = None) -> None:
+        cls.apply("mobile", bot=bot)
+
+    @classmethod
+    def android(cls, *, bot: Any = None) -> None:
+        cls.apply("android", bot=bot)
+
+    @classmethod
+    def vr(cls, *, bot: Any = None) -> None:
+        cls.apply("vr", bot=bot)
+
+    @classmethod
+    def web(cls, *, bot: Any = None) -> None:
+        cls.apply("web", bot=bot)
+
+    @classmethod
+    def embedded(cls, *, bot: Any = None) -> None:
+        cls.apply("embedded", bot=bot)
+
+    @classmethod
+    def custom(cls, *, bot: Any = None, **props: str) -> None:
+        cls.apply(props, bot=bot)
+
+
+def presence(profile: str | dict[str, str], *, bot: Any = None) -> None:
+    PresenceHandler.apply(profile, bot=bot)
