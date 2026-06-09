@@ -1,8 +1,34 @@
 from __future__ import annotations
 import asyncio
+import io
+import datetime
 import discord
 from discord.ext import commands
 from typing import Self, Callable, Awaitable, Any
+
+
+async def _busy_reply(interaction: discord.Interaction, message: str) -> None:
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.HTTPException:
+        pass
+
+
+def _walk_components(view: discord.ui.LayoutView) -> list[Any]:
+    collected: list[Any] = []
+
+    def descend(items: Any) -> None:
+        for item in items:
+            collected.append(item)
+            children = getattr(item, "children", None)
+            if children:
+                descend(list(children))
+
+    descend(list(view.children))
+    return collected
 
 
 class ButtonBuilder:
@@ -17,6 +43,9 @@ class ButtonBuilder:
         self._id: int | None = None
         self._sku_id: int | None = None
         self._callback: Any = None
+        self._once: bool = False
+        self._debounce: float = 0.0
+        self._busy_message: str = "Please wait a moment before trying that again."
 
     def label(self, text: str) -> Self:
         self._label = text
@@ -206,6 +235,60 @@ class ButtonBuilder:
         self._callback = cb
         return self
 
+    def once(self, state: bool = True) -> Self:
+        self._once = state
+        return self
+
+    def fire_once(self) -> Self:
+        self._once = True
+        return self
+
+    def single_use(self) -> Self:
+        self._once = True
+        return self
+
+    def debounce(self, seconds: float) -> Self:
+        self._debounce = max(0.0, float(seconds))
+        return self
+
+    def throttle(self, seconds: float) -> Self:
+        return self.debounce(seconds)
+
+    def cooldown(self, seconds: float) -> Self:
+        return self.debounce(seconds)
+
+    def busy(self, message: str) -> Self:
+        self._busy_message = message
+        return self
+
+    def _guard(self, cb: Any) -> Any:
+        if not self._once and self._debounce <= 0:
+            return cb
+        once = self._once
+        window = self._debounce
+        message = self._busy_message
+        state: dict[str, Any] = {"used": False, "last": 0.0, "running": False}
+
+        async def guarded(interaction: discord.Interaction) -> None:
+            now = asyncio.get_event_loop().time()
+            blocked = (
+                state["running"]
+                or (once and state["used"])
+                or (window > 0 and (now - state["last"]) < window)
+            )
+            if blocked:
+                await _busy_reply(interaction, message)
+                return
+            state["last"] = now
+            state["used"] = True
+            state["running"] = True
+            try:
+                await discord.utils.maybe_coroutine(cb, interaction)
+            finally:
+                state["running"] = False
+
+        return guarded
+
     def build(self) -> discord.ui.Button:
         kwargs: dict[str, Any] = {
             "style": self._style,
@@ -226,7 +309,7 @@ class ButtonBuilder:
             kwargs["id"] = self._id
         btn = discord.ui.Button(**kwargs)
         if self._callback:
-            btn.callback = self._callback
+            btn.callback = self._guard(self._callback)
         return btn
 
 
@@ -714,6 +797,8 @@ class GalleryBuilder:
             kwargs["description"] = description
         if spoiler:
             kwargs["spoiler"] = spoiler
+        if isinstance(media, str) and hasattr(discord, "UnfurledMediaItem"):
+            media = discord.UnfurledMediaItem(url=media)
         self._items.append(discord.MediaGalleryItem(media, **kwargs))
         return self
 
@@ -762,6 +847,342 @@ class GalleryBuilder:
         if self._id is not None:
             kwargs["id"] = self._id
         return discord.ui.MediaGallery(*self._items, **kwargs)
+
+
+class MediaCollector:
+    MAX_PER_GALLERY = 10
+    SPOILER_PREFIX = "SPOILER_"
+    GIF_EMBED_TYPES = ("gifv", "video")
+    IMAGE_EMBED_TYPES = ("image",)
+
+    def __init__(self) -> None:
+        self._items: list[discord.MediaGalleryItem] = []
+        self._files: list[discord.File] = []
+        self._seen: set[str] = set()
+
+    def _coerce(self, url: str) -> Any:
+        if hasattr(discord, "UnfurledMediaItem"):
+            return discord.UnfurledMediaItem(url=url)
+        return url
+
+    def _unique(self, name: str) -> str:
+        base = name or "file"
+        if base not in self._seen:
+            self._seen.add(base)
+            return base
+        stem, dot, ext = base.rpartition(".")
+        counter = 1
+        while True:
+            candidate = f"{stem}_{counter}.{ext}" if dot else f"{base}_{counter}"
+            if candidate not in self._seen:
+                self._seen.add(candidate)
+                return candidate
+            counter += 1
+
+    @staticmethod
+    def _rename(file: discord.File, new_name: str) -> None:
+        try:
+            file.filename = new_name
+        except (AttributeError, TypeError):
+            try:
+                file._filename = new_name
+            except (AttributeError, TypeError):
+                pass
+
+    def url(self, url: str, *, description: str = "", spoiler: bool = False) -> Self:
+        if not url:
+            return self
+        kwargs: dict[str, Any] = {}
+        if description:
+            kwargs["description"] = description
+        if spoiler:
+            kwargs["spoiler"] = spoiler
+        self._items.append(discord.MediaGalleryItem(self._coerce(url), **kwargs))
+        return self
+
+    def file(self, file: discord.File, *, description: str = "", spoiler: bool = False) -> Self:
+        raw = file.filename or "file"
+        flagged = spoiler or raw.startswith(self.SPOILER_PREFIX)
+        clean = raw[len(self.SPOILER_PREFIX):] if raw.startswith(self.SPOILER_PREFIX) else raw
+        name = self._unique(clean)
+        self._rename(file, name)
+        self._files.append(file)
+        kwargs: dict[str, Any] = {}
+        if description:
+            kwargs["description"] = description
+        if flagged:
+            kwargs["spoiler"] = True
+        self._items.append(discord.MediaGalleryItem(self._coerce(f"attachment://{name}"), **kwargs))
+        return self
+
+    async def attachment(self, attachment: discord.Attachment, *, use_cached: bool = True) -> bool:
+        raw = attachment.filename or "file"
+        flagged = raw.startswith(self.SPOILER_PREFIX)
+        clean = raw[len(self.SPOILER_PREFIX):] if flagged else raw
+        name = self._unique(clean)
+        fetched: discord.File | None = None
+        for cached in (use_cached, not use_cached):
+            try:
+                fetched = await attachment.to_file(filename=name, use_cached=cached)
+                break
+            except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                continue
+        if fetched is None:
+            self._seen.discard(name)
+            return False
+        self._files.append(fetched)
+        kwargs: dict[str, Any] = {}
+        if flagged:
+            kwargs["spoiler"] = True
+        self._items.append(discord.MediaGalleryItem(self._coerce(f"attachment://{name}"), **kwargs))
+        return True
+
+    @classmethod
+    def _embed_media(cls, embed: discord.Embed) -> str | None:
+        etype = getattr(embed, "type", None)
+        if etype in cls.GIF_EMBED_TYPES:
+            video = getattr(embed, "video", None)
+            if video is not None and getattr(video, "url", None):
+                return video.url
+            thumb = getattr(embed, "thumbnail", None)
+            if thumb is not None and getattr(thumb, "url", None):
+                return thumb.url
+        if etype in cls.IMAGE_EMBED_TYPES:
+            image = getattr(embed, "image", None)
+            if image is not None and getattr(image, "url", None):
+                return image.url
+            thumb = getattr(embed, "thumbnail", None)
+            if thumb is not None and getattr(thumb, "url", None):
+                return thumb.url
+        return None
+
+    @staticmethod
+    def _sticker_media(sticker: Any) -> str | None:
+        fmt = getattr(sticker, "format", None)
+        lottie = getattr(discord.StickerFormatType, "lottie", None)
+        if fmt is not None and lottie is not None and fmt == lottie:
+            return None
+        return getattr(sticker, "url", None)
+
+    async def from_message(
+        self,
+        message: discord.Message,
+        *,
+        download: bool = True,
+        max_bytes: int | None = None,
+    ) -> Self:
+        for att in getattr(message, "attachments", []):
+            within_limit = max_bytes is None or getattr(att, "size", 0) <= max_bytes
+            if download and within_limit:
+                if await self.attachment(att):
+                    continue
+            elif not download:
+                self.url(att.url, spoiler=att.is_spoiler())
+        for embed in getattr(message, "embeds", []):
+            media = self._embed_media(embed)
+            if media:
+                self.url(media)
+        for sticker in getattr(message, "stickers", []):
+            media = self._sticker_media(sticker)
+            if media:
+                self.url(media)
+        return self
+
+    def galleries(self) -> list[discord.ui.MediaGallery]:
+        out: list[discord.ui.MediaGallery] = []
+        for start in range(0, len(self._items), self.MAX_PER_GALLERY):
+            chunk = self._items[start:start + self.MAX_PER_GALLERY]
+            out.append(discord.ui.MediaGallery(*chunk))
+        return out
+
+    def files(self) -> list[discord.File]:
+        return self._files
+
+    @property
+    def has_media(self) -> bool:
+        return bool(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __bool__(self) -> bool:
+        return bool(self._items)
+
+
+class FileBuilder:
+    def __init__(self, *, id: int | None = None) -> None:
+        self._media: str | None = None
+        self._spoiler: bool = False
+        self._id = id
+        self._file: discord.File | None = None
+
+    def reference(self, name: str) -> Self:
+        self._media = name if name.startswith("attachment://") else f"attachment://{name}"
+        return self
+
+    def named(self, name: str) -> Self:
+        return self.reference(name)
+
+    def attachment(self, name: str) -> Self:
+        return self.reference(name)
+
+    def url(self, url: str) -> Self:
+        self._media = url
+        return self
+
+    def source(self, file: discord.File, *, name: str | None = None) -> Self:
+        fname = name or file.filename or "file"
+        if fname.startswith("SPOILER_"):
+            fname = fname[len("SPOILER_"):]
+        try:
+            file.filename = fname
+        except (AttributeError, TypeError):
+            try:
+                file._filename = fname
+            except (AttributeError, TypeError):
+                pass
+        self._file = file
+        self._media = f"attachment://{fname}"
+        return self
+
+    def upload(self, file: discord.File, *, name: str | None = None) -> Self:
+        return self.source(file, name=name)
+
+    def from_text(self, content: str | bytes, *, name: str = "file.txt") -> Self:
+        return self.source(text_file(content, filename=name), name=name)
+
+    def spoiler(self, state: bool = True) -> Self:
+        self._spoiler = state
+        return self
+
+    def hidden(self, state: bool = True) -> Self:
+        self._spoiler = state
+        return self
+
+    def id(self, value: int) -> Self:
+        self._id = value
+        return self
+
+    @property
+    def file(self) -> discord.File | None:
+        return self._file
+
+    def build(self) -> discord.ui.File:
+        if self._media is None:
+            raise VexValidationError("a file component needs a reference, url, or source before it can render")
+        kwargs: dict[str, Any] = {"spoiler": self._spoiler}
+        if self._id is not None:
+            kwargs["id"] = self._id
+        return discord.ui.File(self._media, **kwargs)
+
+
+class TableBuilder:
+    def __init__(self, *, title: str | None = None) -> None:
+        self._title = title
+        self._headers: list[str] = []
+        self._rows: list[list[str]] = []
+        self._aligns: list[str] = []
+        self._lang: str = ""
+        self._gap: str = "  "
+        self._cap: int | None = None
+
+    def title(self, text: str) -> Self:
+        self._title = text
+        return self
+
+    def caption(self, text: str) -> Self:
+        self._title = text
+        return self
+
+    def headers(self, *names: Any) -> Self:
+        self._headers = [str(n) for n in names]
+        return self
+
+    def columns(self, *names: Any) -> Self:
+        return self.headers(*names)
+
+    def head(self, *names: Any) -> Self:
+        return self.headers(*names)
+
+    def align(self, *aligns: str) -> Self:
+        self._aligns = [a[:1].lower() for a in aligns]
+        return self
+
+    def row(self, *values: Any) -> Self:
+        self._rows.append([str(v) for v in values])
+        return self
+
+    def add(self, *values: Any) -> Self:
+        return self.row(*values)
+
+    def record(self, *values: Any) -> Self:
+        return self.row(*values)
+
+    def extend(self, items: list[Any]) -> Self:
+        for item in items:
+            self.row(*item)
+        return self
+
+    def lang(self, language: str) -> Self:
+        self._lang = language
+        return self
+
+    def code(self, language: str) -> Self:
+        self._lang = language
+        return self
+
+    def gap(self, spaces: int) -> Self:
+        self._gap = " " * max(1, spaces)
+        return self
+
+    def max_cell(self, width: int) -> Self:
+        self._cap = max(1, width)
+        return self
+
+    def _clip(self, value: str) -> str:
+        if self._cap is None or len(value) <= self._cap:
+            return value
+        if self._cap <= 1:
+            return value[: self._cap]
+        return value[: self._cap - 1] + "\u2026"
+
+    def _cell(self, value: str, width: int, align: str) -> str:
+        if align == "r":
+            return value.rjust(width)
+        if align == "c":
+            return value.center(width)
+        return value.ljust(width)
+
+    def render(self) -> str:
+        grid: list[list[str]] = []
+        if self._headers:
+            grid.append([self._clip(h) for h in self._headers])
+        for row in self._rows:
+            grid.append([self._clip(c) for c in row])
+        prefix = f"{self._title}\n" if self._title else ""
+        if not grid:
+            return f"{prefix}```{self._lang}\n```"
+        ncols = max(len(row) for row in grid)
+        grid = [row + [""] * (ncols - len(row)) for row in grid]
+        widths = [max(len(grid[r][c]) for r in range(len(grid))) for c in range(ncols)]
+        aligns = [self._aligns[c] if c < len(self._aligns) else "l" for c in range(ncols)]
+        lines: list[str] = []
+        start = 0
+        if self._headers:
+            header = grid[0]
+            lines.append(self._gap.join(self._cell(header[c], widths[c], aligns[c]) for c in range(ncols)))
+            lines.append(self._gap.join("-" * widths[c] for c in range(ncols)))
+            start = 1
+        for row in grid[start:]:
+            lines.append(self._gap.join(self._cell(row[c], widths[c], aligns[c]) for c in range(ncols)))
+        body = "\n".join(lines)
+        return f"{prefix}```{self._lang}\n{body}\n```"
+
+    def text_display(self) -> discord.ui.TextDisplay:
+        return discord.ui.TextDisplay(self.render())
+
+    def build(self) -> discord.ui.TextDisplay:
+        return self.text_display()
 
 
 class ContainerBuilder:
@@ -923,6 +1344,20 @@ class ContainerBuilder:
         return self.button(builder, inline=inline)
 
     def gallery(self, builder: GalleryBuilder) -> Self:
+        self._children.append(builder.build())
+        return self
+
+    def file(self, builder: FileBuilder) -> Self:
+        self._children.append(builder.build())
+        return self
+
+    def attachment(self, builder: FileBuilder) -> Self:
+        return self.file(builder)
+
+    def document(self, builder: FileBuilder) -> Self:
+        return self.file(builder)
+
+    def table(self, builder: TableBuilder) -> Self:
         self._children.append(builder.build())
         return self
 
@@ -1232,11 +1667,71 @@ class Vex(discord.ui.LayoutView):
         self.add_item(builder.build())
         return self
 
+    def add_galleries(self, source: MediaCollector | list[discord.ui.MediaGallery]) -> Self:
+        built = source.galleries() if isinstance(source, MediaCollector) else source
+        for component in built:
+            self.add_item(component)
+        return self
+
+    def media_galleries(self, source: MediaCollector | list[discord.ui.MediaGallery]) -> Self:
+        return self.add_galleries(source)
+
+    def collect(self, source: MediaCollector | list[discord.ui.MediaGallery]) -> Self:
+        return self.add_galleries(source)
+
     def images(self, builder: GalleryBuilder) -> Self:
         return self.gallery(builder)
 
     def media(self, builder: GalleryBuilder) -> Self:
         return self.gallery(builder)
+
+    def file(self, builder: FileBuilder) -> Self:
+        self.add_item(builder.build())
+        return self
+
+    def attachment(self, builder: FileBuilder) -> Self:
+        return self.file(builder)
+
+    def document(self, builder: FileBuilder) -> Self:
+        return self.file(builder)
+
+    def table(self, builder: TableBuilder) -> Self:
+        self.add_item(builder.build())
+        return self
+
+    def _audit(self) -> tuple[int, int, list[str]]:
+        total = 0
+        text_chars = 0
+        problems: list[str] = []
+        for item in _walk_components(self):
+            total += 1
+            content = getattr(item, "content", None)
+            if isinstance(content, str):
+                text_chars += len(content)
+            if isinstance(item, discord.ui.MediaGallery):
+                count = len(getattr(item, "items", []))
+                if count > MediaCollector.MAX_PER_GALLERY:
+                    problems.append(f"a media gallery holds {count} items (Discord allows 10)")
+        if total > 40:
+            problems.append(f"{total} total components (Discord allows 40)")
+        if text_chars > 4000:
+            problems.append(f"{text_chars} characters of text (Discord allows 4000)")
+        return total, text_chars, problems
+
+    def is_valid(self) -> bool:
+        return not self._audit()[2]
+
+    def component_count(self) -> int:
+        return self._audit()[0]
+
+    def text_length(self) -> int:
+        return self._audit()[1]
+
+    def validate(self) -> Self:
+        problems = self._audit()[2]
+        if problems:
+            raise VexValidationError("this view exceeds Discord's limits: " + "; ".join(problems))
+        return self
 
     def photos(self, builder: GalleryBuilder) -> Self:
         return self.gallery(builder)
@@ -1982,6 +2477,84 @@ def media(*, id: int | None = None) -> GalleryBuilder:
     return GalleryBuilder(id=id)
 
 
+def media_collector() -> MediaCollector:
+    return MediaCollector()
+
+
+def collector() -> MediaCollector:
+    return MediaCollector()
+
+
+def file_component(*, id: int | None = None) -> FileBuilder:
+    return FileBuilder(id=id)
+
+
+def file(*, id: int | None = None) -> FileBuilder:
+    return FileBuilder(id=id)
+
+
+def document(*, id: int | None = None) -> FileBuilder:
+    return FileBuilder(id=id)
+
+
+def table(*, title: str | None = None) -> TableBuilder:
+    return TableBuilder(title=title)
+
+
+def leaderboard(*, title: str | None = None) -> TableBuilder:
+    return TableBuilder(title=title)
+
+
+def text_file(content: str | bytes, filename: str = "message.txt", *, spoiler: bool = False) -> discord.File:
+    raw = content.encode("utf-8") if isinstance(content, str) else content
+    buffer = io.BytesIO(raw)
+    buffer.seek(0)
+    return discord.File(buffer, filename=filename, spoiler=spoiler)
+
+
+def bytes_file(content: str | bytes, filename: str = "message.txt", *, spoiler: bool = False) -> discord.File:
+    return text_file(content, filename, spoiler=spoiler)
+
+
+def file_from_text(content: str | bytes, filename: str = "message.txt", *, spoiler: bool = False) -> discord.File:
+    return text_file(content, filename, spoiler=spoiler)
+
+
+def progress(
+    value: float,
+    maximum: float,
+    *,
+    width: int = 20,
+    fill: str = "\u2588",
+    track: str = "\u2591",
+    prefix: str = "",
+    suffix: str = "",
+    show_percent: bool = True,
+    show_value: bool = False,
+    percent_format: str = "{pct:.0f}%",
+) -> str:
+    span = maximum if maximum else 1
+    ratio = 0.0 if span <= 0 else max(0.0, min(1.0, value / span))
+    filled = int(round(ratio * width))
+    bar = prefix + fill * filled + track * (width - filled) + suffix
+    tail = ""
+    if show_percent:
+        tail += " " + percent_format.format(pct=ratio * 100)
+    if show_value:
+        shown = int(value) if float(value).is_integer() else value
+        cap = int(maximum) if float(maximum).is_integer() else maximum
+        tail += f" ({shown}/{cap})"
+    return bar + tail
+
+
+def bar(value: float, maximum: float, **kwargs: Any) -> str:
+    return progress(value, maximum, **kwargs)
+
+
+def meter(value: float, maximum: float, **kwargs: Any) -> str:
+    return progress(value, maximum, **kwargs)
+
+
 def container(*, id: int | None = None) -> ContainerBuilder:
     return ContainerBuilder(id=id)
 
@@ -2336,6 +2909,10 @@ class VexError:
     SERVER_BLACKLISTED = "This server is not allowed to use this bot."
     MAINTENANCE = "The bot is currently under maintenance. Please try again later."
     UNKNOWN = "An unknown error occurred."
+
+
+class VexValidationError(Exception):
+    pass
 
 
 class ConfirmView(discord.ui.LayoutView):
@@ -3600,10 +4177,55 @@ def auto_delete(*, timeout: float | None = 30.0) -> AutoDeleteView:
     return AutoDeleteView(timeout=timeout)
 
 
+class Theme:
+    def __init__(
+        self,
+        *,
+        error: str = "#ed4245",
+        success: str = "#57f287",
+        info: str = "#5865f2",
+        warning: str = "#fee75c",
+        accent: str = "#5865f2",
+        muted: str = "#4f545c",
+    ) -> None:
+        self.error = error
+        self.success = success
+        self.info = info
+        self.warning = warning
+        self.accent = accent
+        self.muted = muted
+
+    def color(self, name: str) -> str:
+        return getattr(self, name, self.accent)
+
+    def colour(self, name: str) -> str:
+        return self.color(name)
+
+
+_THEME = Theme()
+
+
+def theme() -> Theme:
+    return _THEME
+
+
+def set_theme(**colors: str) -> Theme:
+    for key, value in colors.items():
+        if hasattr(_THEME, key):
+            setattr(_THEME, key, value)
+    return _THEME
+
+
+def use_theme(custom: Theme) -> Theme:
+    global _THEME
+    _THEME = custom
+    return _THEME
+
+
 def error_card(message: str, *, title: str = "Error") -> ContainerBuilder:
     return (
         container()
-        .hex("#ed4245")
+        .hex(theme().error)
         .h3(title)
         .text(message)
     )
@@ -3612,7 +4234,7 @@ def error_card(message: str, *, title: str = "Error") -> ContainerBuilder:
 def success_card(message: str, *, title: str = "Success") -> ContainerBuilder:
     return (
         container()
-        .hex("#57f287")
+        .hex(theme().success)
         .h3(title)
         .text(message)
     )
@@ -3621,7 +4243,16 @@ def success_card(message: str, *, title: str = "Success") -> ContainerBuilder:
 def info_card(message: str, *, title: str = "Info") -> ContainerBuilder:
     return (
         container()
-        .hex("#5865f2")
+        .hex(theme().info)
+        .h3(title)
+        .text(message)
+    )
+
+
+def warning_card(message: str, *, title: str = "Warning") -> ContainerBuilder:
+    return (
+        container()
+        .hex(theme().warning)
         .h3(title)
         .text(message)
     )
@@ -4552,3 +5183,503 @@ class PresenceHandler:
 
 def presence(profile: str | dict[str, str], *, bot: Any = None) -> None:
     PresenceHandler.apply(profile, bot=bot)
+
+class PollBuilder:
+    def __init__(self, question: str = "") -> None:
+        self._question = question
+        self._duration = datetime.timedelta(hours=24)
+        self._multiple = False
+        self._answers: list[tuple[str, Any]] = []
+
+    def question(self, text: str) -> Self:
+        self._question = text
+        return self
+
+    def ask(self, text: str) -> Self:
+        return self.question(text)
+
+    def prompt(self, text: str) -> Self:
+        return self.question(text)
+
+    def duration(self, *, days: int = 0, hours: int = 0, minutes: int = 0) -> Self:
+        self._duration = datetime.timedelta(days=days, hours=hours, minutes=minutes)
+        return self
+
+    def hours(self, count: float) -> Self:
+        self._duration = datetime.timedelta(hours=count)
+        return self
+
+    def days(self, count: float) -> Self:
+        self._duration = datetime.timedelta(days=count)
+        return self
+
+    def multiple(self, state: bool = True) -> Self:
+        self._multiple = state
+        return self
+
+    def single(self) -> Self:
+        self._multiple = False
+        return self
+
+    def answer(self, text: str, *, emoji: Any = None) -> Self:
+        self._answers.append((text, emoji))
+        return self
+
+    def option(self, text: str, *, emoji: Any = None) -> Self:
+        return self.answer(text, emoji=emoji)
+
+    def choice(self, text: str, *, emoji: Any = None) -> Self:
+        return self.answer(text, emoji=emoji)
+
+    def options(self, items: list[Any]) -> Self:
+        for item in items:
+            if isinstance(item, (list, tuple)):
+                self.answer(str(item[0]), emoji=item[1] if len(item) > 1 else None)
+            else:
+                self.answer(str(item))
+        return self
+
+    def build(self) -> discord.Poll:
+        poll = discord.Poll(question=self._question, duration=self._duration, multiple=self._multiple)
+        for text, emoji in self._answers:
+            if emoji is not None:
+                poll.add_answer(text=text, emoji=emoji)
+            else:
+                poll.add_answer(text=text)
+        return poll
+
+
+def poll(question: str = "") -> PollBuilder:
+    return PollBuilder(question)
+
+
+def survey(question: str = "") -> PollBuilder:
+    return PollBuilder(question)
+
+
+def persist(view: discord.ui.LayoutView, bot: commands.Bot) -> discord.ui.LayoutView:
+    if getattr(view, "timeout", None) is not None:
+        raise VexValidationError("persistent views must be created with timeout=None so they survive restarts")
+    missing: list[str] = []
+    for item in _walk_components(view):
+        if isinstance(item, discord.ui.Button):
+            if item.url is None and getattr(item, "sku_id", None) is None and not item.custom_id:
+                missing.append("button")
+        elif isinstance(item, discord.ui.Select):
+            if not item.custom_id:
+                missing.append("select")
+    if missing:
+        kinds = ", ".join(sorted(set(missing)))
+        raise VexValidationError(f"persistent views need a custom_id on every interactive component; missing on: {kinds}")
+    bot.add_view(view)
+    return view
+
+
+def register_view(view: discord.ui.LayoutView, bot: commands.Bot) -> discord.ui.LayoutView:
+    return persist(view, bot)
+
+
+def make_persistent(view: discord.ui.LayoutView, bot: commands.Bot) -> discord.ui.LayoutView:
+    return persist(view, bot)
+
+
+class TypedConfirmView(discord.ui.LayoutView):
+    def __init__(
+        self,
+        *,
+        prompt: str,
+        phrase: str,
+        confirm_label: str = "Confirm",
+        cancel_label: str = "Cancel",
+        field_label: str | None = None,
+        case_sensitive: bool = False,
+        timeout: float | None = 60.0,
+        ephemeral: bool = True,
+        owner_id: int | None = None,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self._phrase = phrase
+        self._case = case_sensitive
+        self._ephemeral = ephemeral
+        self._owner_id = owner_id
+        self._result: bool | None = None
+        self._field_label = field_label or f"Type {phrase} to confirm"
+        self._future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+        confirm_btn = discord.ui.Button(style=discord.ButtonStyle.danger, label=confirm_label, custom_id="vex_typed_yes")
+        cancel_btn = discord.ui.Button(style=discord.ButtonStyle.secondary, label=cancel_label, custom_id="vex_typed_no")
+        confirm_btn.callback = self._open_modal
+        cancel_btn.callback = self._cancel
+        self.add_item(discord.ui.TextDisplay(prompt))
+        self.add_item(discord.ui.TextDisplay(f"-# You will be asked to type `{phrase}` to continue."))
+        self.add_item(discord.ui.ActionRow(confirm_btn, cancel_btn))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if self._owner_id is None or interaction.user.id == self._owner_id:
+            return True
+        await interaction.response.send_message(VexError.FORBIDDEN, ephemeral=True)
+        return False
+
+    def _matches(self, value: str) -> bool:
+        left = value.strip()
+        right = self._phrase.strip()
+        if not self._case:
+            left = left.casefold()
+            right = right.casefold()
+        return left == right
+
+    def _freeze(self) -> None:
+        for item in list(self.children):
+            if hasattr(item, "disabled"):
+                item.disabled = True
+            for child in getattr(item, "children", []) or []:
+                if hasattr(child, "disabled"):
+                    child.disabled = True
+
+    async def _open_modal(self, interaction: discord.Interaction) -> None:
+        outer = self
+        field = discord.ui.TextInput(
+            label=outer._field_label[:45],
+            custom_id="vex_typed_phrase",
+            required=True,
+            max_length=max(1, min(len(outer._phrase) + 20, 100)),
+        )
+
+        class _PhraseModal(discord.ui.Modal, title="Confirm action"):
+            def __init__(self) -> None:
+                super().__init__(timeout=outer.timeout or 60.0)
+                self.add_item(field)
+
+            async def on_submit(self, inner: discord.Interaction) -> None:
+                if outer._matches(field.value):
+                    outer._result = True
+                    outer._freeze()
+                    outer.stop()
+                    if not outer._future.done():
+                        outer._future.set_result(True)
+                    await inner.response.edit_message(view=outer)
+                else:
+                    await inner.response.send_message(VexError.NOT_CONFIRMED, ephemeral=True)
+
+        await interaction.response.send_modal(_PhraseModal())
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        self._result = False
+        self._freeze()
+        self.stop()
+        if not self._future.done():
+            self._future.set_result(False)
+        await interaction.response.edit_message(view=self)
+
+    async def on_timeout(self) -> None:
+        self._result = None
+        if not self._future.done():
+            self._future.set_result(False)
+
+    @property
+    def result(self) -> bool | None:
+        return self._result
+
+    @property
+    def confirmed(self) -> bool:
+        return self._result is True
+
+    async def wait_result(self) -> bool:
+        return await self._future
+
+    async def send_to(self, target: discord.abc.Messageable) -> bool:
+        await target.send(view=self)
+        return await self.wait_result()
+
+    async def reply_to(self, interaction: discord.Interaction) -> bool:
+        if interaction.response.is_done():
+            await interaction.followup.send(view=self, ephemeral=self._ephemeral)
+        else:
+            await interaction.response.send_message(view=self, ephemeral=self._ephemeral)
+        return await self.wait_result()
+
+    async def respond(self, interaction: discord.Interaction) -> bool:
+        return await self.reply_to(interaction)
+
+    async def ask(self, interaction: discord.Interaction) -> bool:
+        return await self.reply_to(interaction)
+
+
+def typed_confirm(
+    prompt: str,
+    phrase: str,
+    *,
+    confirm_label: str = "Confirm",
+    cancel_label: str = "Cancel",
+    field_label: str | None = None,
+    case_sensitive: bool = False,
+    timeout: float | None = 60.0,
+    ephemeral: bool = True,
+    owner_id: int | None = None,
+) -> TypedConfirmView:
+    return TypedConfirmView(
+        prompt=prompt,
+        phrase=phrase,
+        confirm_label=confirm_label,
+        cancel_label=cancel_label,
+        field_label=field_label,
+        case_sensitive=case_sensitive,
+        timeout=timeout,
+        ephemeral=ephemeral,
+        owner_id=owner_id,
+    )
+
+
+class WizardStep:
+    def __init__(self, title: str, fields: list[Any]) -> None:
+        self.title = title
+        self.fields = fields
+
+
+class Wizard(discord.ui.LayoutView):
+    def __init__(
+        self,
+        steps: list[WizardStep] | None = None,
+        *,
+        title: str = "Setup",
+        timeout: float | None = 300.0,
+        owner_id: int | None = None,
+        ephemeral: bool = True,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self._steps: list[WizardStep] = list(steps or [])
+        self._title = title
+        self._owner_id = owner_id
+        self._ephemeral = ephemeral
+        self._index = 0
+        self._data: dict[str, str] = {}
+        self._future: asyncio.Future[dict[str, str] | None] = asyncio.get_event_loop().create_future()
+
+    def step(self, title: str, fields: list[Any]) -> Self:
+        self._steps.append(WizardStep(title, fields))
+        return self
+
+    def add_step(self, title: str, fields: list[Any]) -> Self:
+        return self.step(title, fields)
+
+    def interaction_check(self, interaction: discord.Interaction) -> Any:
+        async def check() -> bool:
+            if self._owner_id is None or interaction.user.id == self._owner_id:
+                return True
+            await interaction.response.send_message(VexError.FORBIDDEN, ephemeral=True)
+            return False
+        return check()
+
+    def _render(self) -> None:
+        self.clear_items()
+        if not self._steps:
+            self.add_item(discord.ui.TextDisplay(f"# {self._title}"))
+            self.add_item(discord.ui.TextDisplay("No steps were configured."))
+            return
+        current = self._steps[self._index]
+        self.add_item(discord.ui.TextDisplay(f"# {self._title}"))
+        self.add_item(discord.ui.TextDisplay(f"**Step {self._index + 1} of {len(self._steps)}** \u00b7 {current.title}"))
+        self.add_item(discord.ui.TextDisplay(progress(self._index, len(self._steps), width=14, show_percent=False)))
+        open_btn = discord.ui.Button(style=discord.ButtonStyle.primary, label="Open form", custom_id="vex_wizard_open")
+        cancel_btn = discord.ui.Button(style=discord.ButtonStyle.secondary, label="Cancel", custom_id="vex_wizard_cancel")
+        open_btn.callback = self._open
+        cancel_btn.callback = self._cancel
+        self.add_item(discord.ui.ActionRow(open_btn, cancel_btn))
+
+    def _finish(self) -> None:
+        self.clear_items()
+        self.add_item(discord.ui.TextDisplay(f"# {self._title}"))
+        self.add_item(discord.ui.TextDisplay("All steps complete."))
+
+    async def _open(self, interaction: discord.Interaction) -> None:
+        outer = self
+        current = self._steps[self._index]
+        inputs = [field.build() if hasattr(field, "build") else field for field in current.fields]
+
+        class _StepModal(discord.ui.Modal, title=current.title[:45] or "Step"):
+            def __init__(self) -> None:
+                super().__init__(timeout=outer.timeout or 300.0)
+                for field in inputs:
+                    self.add_item(field)
+
+            async def on_submit(self, inner: discord.Interaction) -> None:
+                for field in inputs:
+                    outer._data[field.custom_id] = field.value
+                outer._index += 1
+                if outer._index >= len(outer._steps):
+                    outer._finish()
+                    outer.stop()
+                    if not outer._future.done():
+                        outer._future.set_result(dict(outer._data))
+                else:
+                    outer._render()
+                await inner.response.edit_message(view=outer)
+
+        await interaction.response.send_modal(_StepModal())
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        self.clear_items()
+        self.add_item(discord.ui.TextDisplay(f"# {self._title}"))
+        self.add_item(discord.ui.TextDisplay(VexError.CONFIRM_CANCELLED))
+        self.stop()
+        if not self._future.done():
+            self._future.set_result(None)
+        await interaction.response.edit_message(view=self)
+
+    async def on_timeout(self) -> None:
+        if not self._future.done():
+            self._future.set_result(None)
+
+    @property
+    def data(self) -> dict[str, str]:
+        return dict(self._data)
+
+    async def wait_result(self) -> dict[str, str] | None:
+        return await self._future
+
+    async def send_to(self, target: discord.abc.Messageable) -> dict[str, str] | None:
+        self._render()
+        await target.send(view=self)
+        return await self.wait_result()
+
+    async def reply_to(self, interaction: discord.Interaction) -> dict[str, str] | None:
+        self._render()
+        if interaction.response.is_done():
+            await interaction.followup.send(view=self, ephemeral=self._ephemeral)
+        else:
+            await interaction.response.send_message(view=self, ephemeral=self._ephemeral)
+        return await self.wait_result()
+
+    async def respond(self, interaction: discord.Interaction) -> dict[str, str] | None:
+        return await self.reply_to(interaction)
+
+
+def wizard(
+    steps: list[WizardStep] | None = None,
+    *,
+    title: str = "Setup",
+    timeout: float | None = 300.0,
+    owner_id: int | None = None,
+    ephemeral: bool = True,
+) -> Wizard:
+    return Wizard(steps, title=title, timeout=timeout, owner_id=owner_id, ephemeral=ephemeral)
+
+
+class LiveView(Vex):
+    def __init__(
+        self,
+        renderer: Callable[["LiveView"], Any],
+        *,
+        interval: float = 5.0,
+        timeout: float | None = 300.0,
+        max_updates: int | None = None,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self._renderer = renderer
+        self._interval = max(1.0, float(interval))
+        self._max = max_updates
+        self._updates = 0
+        self._message: discord.Message | None = None
+        self._task: asyncio.Task[None] | None = None
+        self._apply()
+
+    def _mount(self, item: Any) -> None:
+        if isinstance(item, ContainerBuilder):
+            self.add_item(item.build())
+        elif isinstance(item, (SectionBuilder, ActionRowBuilder, GalleryBuilder, FileBuilder, TableBuilder)):
+            self.add_item(item.build())
+        elif isinstance(item, str):
+            self.add_item(discord.ui.TextDisplay(item))
+        elif item is not None:
+            self.add_item(item)
+
+    def _apply(self) -> None:
+        self.clear_items()
+        produced = self._renderer(self)
+        if produced is None:
+            return
+        items = produced if isinstance(produced, list) else [produced]
+        for item in items:
+            self._mount(item)
+
+    def _start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._loop())
+
+    async def _loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(self._interval)
+                if self.is_finished():
+                    break
+                self._updates += 1
+                self._apply()
+                if self._message is not None:
+                    try:
+                        await self._message.edit(view=self)
+                    except discord.HTTPException:
+                        break
+                if self._max is not None and self._updates >= self._max:
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    async def refresh(self) -> None:
+        self._apply()
+        if self._message is not None:
+            try:
+                await self._message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+    def stop(self) -> None:
+        super().stop()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+
+    async def on_timeout(self) -> None:
+        await super().on_timeout()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+        if self._message is not None:
+            try:
+                await self._message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+    async def send_to(
+        self,
+        target: discord.abc.Messageable,
+        *,
+        content: str | None = None,
+        files: list[discord.File] | None = None,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> discord.Message:
+        msg = await super().send_to(target, content=content, files=files, allowed_mentions=allowed_mentions)
+        self._message = msg
+        self._start()
+        return msg
+
+    async def reply_to(
+        self,
+        interaction: discord.Interaction,
+        *,
+        ephemeral: bool = False,
+        files: list[discord.File] | None = None,
+        allowed_mentions: discord.AllowedMentions | None = None,
+    ) -> None:
+        await super().reply_to(interaction, ephemeral=ephemeral, files=files, allowed_mentions=allowed_mentions)
+        try:
+            self._message = await interaction.original_response()
+        except discord.HTTPException:
+            self._message = None
+        self._start()
+
+
+def live(
+    renderer: Callable[["LiveView"], Any],
+    *,
+    interval: float = 5.0,
+    timeout: float | None = 300.0,
+    max_updates: int | None = None,
+) -> LiveView:
+    return LiveView(renderer, interval=interval, timeout=timeout, max_updates=max_updates)
