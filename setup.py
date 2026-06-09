@@ -7,4 +7,7 @@ setup(
     description="The vexed API wrapper",
     url="https://github.com/vexed-bot/api",
     author="vexed-bot",
+    install_requires=[
+        "discord.py"
+    ],
 )
