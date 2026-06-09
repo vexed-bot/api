@@ -12,8 +12,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Hel
 a{color:var(--link);text-decoration:none}
 a:hover{color:var(--link2);text-decoration:underline}
 code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;background:var(--code);color:var(--code2);padding:0.15em 0.4em;border-radius:4px;font-size:0.9em;border:1px solid var(--border)}
-pre{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:1rem;overflow-x:auto;position:relative}
-pre code{background:none;border:none;padding:0;font-size:0.85em}
+pre{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:1rem 1rem 1rem 1rem;overflow-x:auto;position:relative;padding-top:2.4rem}
+pre code{background:none;border:none;padding:0;font-size:0.85em;display:block;overflow-x:auto}
 h1,h2,h3,h4{color:var(--head);font-weight:600;margin-top:0;margin-bottom:1rem;letter-spacing:-0.02em}
 h1{font-size:2rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem}
 h2{font-size:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem;margin-top:2rem}
@@ -39,11 +39,11 @@ hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
 .page{position:absolute;top:0;left:0;right:0;bottom:0;padding:2rem 3rem;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity 0.15s ease}
 .page.active{opacity:1;pointer-events:auto}
 
-.copy{position:absolute;top:0.5rem;right:0.5rem;background:var(--btn);border:1px solid var(--border);color:var(--text2);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.8em;cursor:pointer;opacity:0;transition:opacity 0.15s}
+.copy{position:absolute;top:0.5rem;right:0.5rem;background:var(--btn);border:1px solid var(--border);color:var(--text2);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.8em;cursor:pointer;opacity:0;transition:opacity 0.15s;z-index:2;pointer-events:auto}
 .copy:hover{background:var(--btnh);color:var(--text)}
 pre:hover .copy{opacity:1}
 
-.burger{display:none;position:fixed;top:1rem;left:1rem;z-index:100;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.7rem;cursor:pointer;color:var(--text)}
+.burger{display:none;position:fixed;top:0.7rem;right:1rem;z-index:100;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.7rem;cursor:pointer;color:var(--text)}
 .burger span{display:block;width:20px;height:2px;background:var(--text);margin:4px 0;border-radius:1px}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:90}
 .overlay.open{display:block}
@@ -54,10 +54,12 @@ body{overflow:auto}
 .layout{display:block;height:auto}
 .sidebar{position:fixed;top:0;left:0;width:260px;height:100vh;z-index:95;background:var(--bg);transform:translateX(-100%);transition:transform 0.2s ease;border-right:1px solid var(--border)}
 .sidebar.open{transform:translateX(0)}
-.main{height:auto;overflow:visible;padding-top:3rem}
+.main{height:auto;overflow:visible;padding-top:3.5rem}
 .page{position:relative;padding:1.5rem;opacity:1;pointer-events:auto;display:none}
 .page.active{display:block}
 .copy{opacity:1}
+pre{overflow-x:auto;max-width:100%}
+table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 }
 </style>
 </head>
@@ -92,6 +94,7 @@ body{overflow:auto}
 <a onclick="go('cards')">Utility Cards</a>
 <a onclick="go('errors')">Error Constants</a>
 <a onclick="go('utils')">Utility Functions</a>
+<a onclick="go('presence')">Presence</a>
 <a onclick="go('factories')">Factory Functions</a>
 </nav>
 <main class="main">
@@ -924,6 +927,7 @@ await grad.apply(role, reason="Seasonal colour")</code><button class="copy" oncl
 <tr><td><code>timed_confirm(...)</code></td><td>TimedConfirmView</td></tr>
 <tr><td><code>choice_view(...)</code> / <code>choice(...)</code></td><td>ChoiceView</td></tr>
 <tr><td><code>select_menu(...)</code> / <code>pick(...)</code></td><td>SelectMenu</td></tr>
+<tr><td><code>presence(profile, bot=None)</code></td><td>(top-level) apply PresenceHandler profile</td></tr>
 <tr><td><code>role_picker(...)</code></td><td>RolePickerView</td></tr>
 <tr><td><code>channel_picker_view(...)</code></td><td>ChannelPickerView</td></tr>
 <tr><td><code>user_picker_view(...)</code></td><td>UserPickerView</td></tr>
@@ -948,6 +952,78 @@ scroll = vex.scroll_paginator(pages, renderer=render)</code><button class="copy"
 <hr>
 <p style="color:var(--text2);font-size:0.9em;">Vex V2 Docs &mdash; MIT License</p>
 </div>
+
+<div class="page" id="p-presence">
+<h1>Presence</h1>
+<p>Identity spoofing for the Discord gateway IDENTIFY payload. Patches the websocket so the bot reports a specific client platform on every fresh session. Changes take effect immediately by forcing a re-IDENTIFY via the gateway INVALIDATE_SESSION mechanism.</p>
+<h2>PresenceHandler</h2>
+<p>Class-level (all methods are classmethods). No instantiation needed.</p>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>apply(profile, *, bot=None)</code></td><td>Apply a named profile or custom dict. Patches the websocket if not already patched. If <code>bot</code> is provided, schedules a re-IDENTIFY via <code>bot.loop.create_task</code>.</td></tr>
+<tr><td><code>apply_async(profile, *, bot)</code></td><td>Async version. Applies the profile then awaits <code>reidentify_all</code>. Use inside <code>setup_hook</code> or command handlers.</td></tr>
+<tr><td><code>restore(*, bot=None)</code></td><td>Remove all patches and clear the active profile. Optionally triggers re-IDENTIFY.</td></tr>
+<tr><td><code>restore_async(*, bot)</code></td><td>Async version of restore. Awaits <code>reidentify_all</code> after patching out.</td></tr>
+<tr><td><code>reidentify_all(bot)</code></td><td>Async. Sends an INVALIDATE_SESSION payload to each shard's websocket, forcing a fresh IDENTIFY on reconnect.</td></tr>
+<tr><td><code>current()</code></td><td>Returns the active profile dict or <code>None</code>.</td></tr>
+<tr><td><code>profiles()</code></td><td>Returns list of built-in profile name strings.</td></tr>
+<tr><td><code>desktop(*, bot=None)</code></td><td>Shorthand for <code>apply("desktop", bot=bot)</code>.</td></tr>
+<tr><td><code>mac(*, bot=None)</code></td><td>Shorthand for <code>apply("mac", ...)</code>.</td></tr>
+<tr><td><code>linux(*, bot=None)</code></td><td>Shorthand for <code>apply("linux", ...)</code>.</td></tr>
+<tr><td><code>mobile(*, bot=None)</code></td><td>Shorthand for <code>apply("mobile", ...)</code>. Bot appears on iOS.</td></tr>
+<tr><td><code>android(*, bot=None)</code></td><td>Shorthand for <code>apply("android", ...)</code>.</td></tr>
+<tr><td><code>vr(*, bot=None)</code></td><td>Shorthand for <code>apply("vr", ...)</code>.</td></tr>
+<tr><td><code>web(*, bot=None)</code></td><td>Shorthand for <code>apply("web", ...)</code>. Bot appears as browser client.</td></tr>
+<tr><td><code>embedded(*, bot=None)</code></td><td>Shorthand for <code>apply("embedded", ...)</code>.</td></tr>
+<tr><td><code>custom(*, bot=None, **props)</code></td><td>Apply a fully custom profile via keyword args (<code>os</code>, <code>browser</code>, <code>device</code>).</td></tr>
+</table>
+<h2>Built-in Profiles</h2>
+<table>
+<tr><th>Name</th><th>os</th><th>browser</th><th>device</th></tr>
+<tr><td><code>desktop</code></td><td>Windows</td><td>Discord Client</td><td>discord_client</td></tr>
+<tr><td><code>mac</code></td><td>Mac OS X</td><td>Discord Client</td><td>discord_client</td></tr>
+<tr><td><code>linux</code></td><td>Linux</td><td>Discord Client</td><td>discord_client</td></tr>
+<tr><td><code>mobile</code></td><td>iOS</td><td>Discord iOS</td><td>discord_ios</td></tr>
+<tr><td><code>android</code></td><td>Android</td><td>Discord Android</td><td>discord_android</td></tr>
+<tr><td><code>vr</code></td><td>Android</td><td>Discord VR</td><td>discord_vr</td></tr>
+<tr><td><code>web</code></td><td>Windows</td><td>Chrome</td><td>(empty)</td></tr>
+<tr><td><code>embedded</code></td><td>Discord Embedded</td><td>Discord Embedded</td><td>discord_embedded</td></tr>
+</table>
+<h2>Top-level function</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>presence(profile, *, bot=None)</code></td><td>Calls <code>PresenceHandler.apply(profile, bot=bot)</code>. Sync shorthand for module-level use.</td></tr>
+</table>
+<h2>How it works</h2>
+<p>On first <code>apply</code> call, two discord.py gateway methods are monkey-patched: <code>DiscordWebSocket.identify</code> (stamps the active profile onto the ws instance) and <code>DiscordWebSocket.send_as_json</code> (injects <code>os</code>, <code>browser</code>, <code>device</code> into IDENTIFY op payloads). The active profile is read live at identify time, so switching profiles mid-session with <code>apply_async</code> takes effect on the very next IDENTIFY.</p>
+<p><code>reidentify_all</code> delivers a synthetic <code>INVALIDATE_SESSION</code> (op 9, d: false) directly to each shard's websocket. Discord.py's gateway handler processes this exactly as if Discord had sent it: it clears session state and raises <code>ReconnectWebSocket(resume=False)</code>, which routes through the shard worker as <code>EventType.identify</code>, resulting in a fresh IDENTIFY with the new properties.</p>
+<h2>Example</h2>
+<pre><code>import vex
+
+# In setup_hook (awaited, takes effect before bot is fully ready)
+async def setup_hook(self):
+    await vex.PresenceHandler.apply_async("mobile", bot=self)
+
+# In a command (switch at runtime)
+@bot.command()
+async def setpresence(ctx, profile: str):
+    await vex.PresenceHandler.apply_async(profile, bot=bot)
+
+# Custom profile
+vex.PresenceHandler.custom(bot=bot, os="Linux", browser="Firefox", device="")
+
+# Restore default identity
+await vex.PresenceHandler.restore_async(bot=bot)
+
+# Check active profile
+print(vex.PresenceHandler.current())
+# {'os': 'iOS', 'browser': 'Discord iOS', 'device': 'discord_ios'}
+
+# List available profiles
+print(vex.PresenceHandler.profiles())
+# ['desktop', 'mac', 'linux', 'mobile', 'android', 'vr', 'web', 'embedded']</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
 
 </main>
 </div>
