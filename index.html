@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vex V2 Documentation</title>
+<title>Vex V2.2 Documentation</title>
 <style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;--text:#c9d1d9;--text2:#8b949e;--head:#f0f6fc;--link:#58a6ff;--link2:#79c0ff;--code:#161b22;--code2:#e6edf3;--th:#21262d;--tr:#0d1117;--tr2:#161b22;--btn:#21262d;--btn2:#30363d;--btnh:#484f58}
 *{box-sizing:border-box}
@@ -62,6 +62,7 @@ pre{overflow-x:auto;max-width:100%}
 table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 }
 </style>
+<base target="_blank">
 </head>
 <body>
 <div class="burger" onclick="toggle()">
@@ -70,7 +71,7 @@ table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 <div class="overlay" onclick="toggle()"></div>
 <div class="layout">
 <nav class="sidebar" id="nav">
-<a style="font-weight:600;font-size:1.1rem;color:var(--head);margin-bottom:1rem;display:block;">Vex V2</a>
+<a style="font-weight:600;font-size:1.1rem;color:var(--head);margin-bottom:1rem;display:block;">Vex V2.2</a>
 <h2>Overview</h2>
 <a onclick="go('quick')">Quick Start</a>
 <a onclick="go('vex')">Vex View</a>
@@ -84,17 +85,26 @@ table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 <a onclick="go('container')">ContainerBuilder</a>
 <a onclick="go('text_input')">TextInputBuilder</a>
 <a onclick="go('modal')">ModalBuilder</a>
+<a onclick="go('file')">FileBuilder</a>
+<a onclick="go('table')">TableBuilder</a>
+<a onclick="go('poll')">PollBuilder</a>
 <h2>Features</h2>
 <a onclick="go('pagination')">Pagination</a>
 <a onclick="go('confirmation')">Confirmation Flows</a>
+<a onclick="go('typed_confirm')">Typed Confirm</a>
 <a onclick="go('choice')">Choice & Select</a>
 <a onclick="go('pickers')">Entity Pickers</a>
+<a onclick="go('wizard')">Wizard</a>
+<a onclick="go('live')">Live View</a>
+<a onclick="go('media')">Media Collector</a>
 <a onclick="go('help_registry')">Help Registry</a>
 <a onclick="go('cooldowns')">Cooldowns</a>
 <a onclick="go('cards')">Utility Cards</a>
+<a onclick="go('themes')">Themes</a>
 <a onclick="go('errors')">Error Constants</a>
 <a onclick="go('utils')">Utility Functions</a>
 <a onclick="go('presence')">Presence</a>
+<a onclick="go('persistence')">Persistence</a>
 <a onclick="go('factories')">Factory Functions</a>
 </nav>
 <main class="main">
@@ -116,8 +126,8 @@ view = (
 )
 
 await view.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
-<h2>What is Vex V2</h2>
-<p>A fluent, minimal builder library for Discord Components V2 (Layout Views) in Python. Vex wraps discord.py V2 primitives with chainable APIs, pre-built paginators, confirmation flows, modals, cooldown utilities, and a lightweight command help registry.</p>
+<h2>What is Vex V2.2</h2>
+<p>A fluent, minimal builder library for Discord Components V2 (Layout Views) in Python. Vex wraps discord.py V2 primitives with chainable APIs, pre-built paginators, confirmation flows, modals, cooldown utilities, a lightweight command help registry, live views, wizards, polls, and a full theming system.</p>
 </div>
 
 <div class="page" id="p-vex">
@@ -158,8 +168,17 @@ await view.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy
 <tr><td><code>row / buttons / controls / toolbar / actions</code></td><td>Aliases for action_row.</td></tr>
 <tr><td><code>gallery(builder)</code></td><td>Add a built MediaGallery.</td></tr>
 <tr><td><code>images / media / photos / grid</code></td><td>Aliases for gallery.</td></tr>
+<tr><td><code>file(builder)</code></td><td>Add a built File component.</td></tr>
+<tr><td><code>attachment / document</code></td><td>Aliases for file.</td></tr>
+<tr><td><code>table(builder)</code></td><td>Add a built Table as TextDisplay.</td></tr>
 <tr><td><code>container(builder)</code></td><td>Add a built Container.</td></tr>
 <tr><td><code>box / card / block / frame / embed / group / wrap</code></td><td>Aliases for container.</td></tr>
+<tr><td><code>add_galleries(source)</code></td><td>Add MediaGallery list or MediaCollector.</td></tr>
+<tr><td><code>media_galleries / collect</code></td><td>Aliases for add_galleries.</td></tr>
+<tr><td><code>is_valid()</code></td><td>Check if the view is within Discord limits.</td></tr>
+<tr><td><code>validate()</code></td><td>Raise VexValidationError if over limits.</td></tr>
+<tr><td><code>component_count()</code></td><td>Return total component count.</td></tr>
+<tr><td><code>text_length()</code></td><td>Return total text character count.</td></tr>
 <tr><td><code>send_to(target, content=None, files=None, allowed_mentions=None)</code></td><td>Send to a messageable.</td></tr>
 <tr><td><code>send / dispatch / publish / post</code></td><td>Aliases for send_to.</td></tr>
 <tr><td><code>reply_to(interaction, ephemeral=False, files=None, allowed_mentions=None)</code></td><td>Reply to an interaction.</td></tr>
@@ -215,6 +234,9 @@ await view.reply_to(interaction, ephemeral=True)</code><button class="copy" oncl
 <tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
 <tr><td><code>custom_id(value)</code> / <code>cid</code></td><td>Set custom ID.</td></tr>
 <tr><td><code>on_click(callback)</code> / <code>handler / action / callback</code></td><td>Attach an interaction callback.</td></tr>
+<tr><td><code>once(state=True)</code> / <code>fire_once / single_use</code></td><td>Allow only one click.</td></tr>
+<tr><td><code>debounce(seconds)</code> / <code>throttle / cooldown</code></td><td>Rate-limit clicks per user.</td></tr>
+<tr><td><code>busy(message)</code></td><td>Custom message shown when debounced.</td></tr>
 <tr><td><code>build()</code></td><td>Return discord.ui.Button.</td></tr>
 </table>
 <h2>Example</h2>
@@ -224,6 +246,8 @@ await view.reply_to(interaction, ephemeral=True)</code><button class="copy" oncl
     .success()
     .emoji("✅")
     .row(0)
+    .once()
+    .debounce(2.0)
     .on_click(handle_approve)
     .build()
 )
@@ -269,9 +293,9 @@ link_btn = (
     vex.select()
     .placeholder("Pick a colour")
     .custom_id("colour_pick")
-    .add("Red", "red", emoji="🔴")
-    .add("Blue", "blue", emoji="🔵")
-    .add("Green", "green", emoji="🟢")
+    .add("Red", "red", emoji="??")
+    .add("Blue", "blue", emoji="??")
+    .add("Green", "green", emoji="??")
     .on_select(on_colour)
     .build()
 )
@@ -434,6 +458,9 @@ view = vex.vex().gallery(gal)</code><button class="copy" onclick="copy(this)">Co
 <tr><td><code>button(builder, inline=True)</code></td><td>Add a button; auto-bundles into inline ActionRow if possible.</td></tr>
 <tr><td><code>btn</code></td><td>Alias for button.</td></tr>
 <tr><td><code>gallery(builder)</code></td><td>Add a GalleryBuilder.</td></tr>
+<tr><td><code>file(builder)</code></td><td>Add a FileBuilder.</td></tr>
+<tr><td><code>attachment / document</code></td><td>Aliases for file.</td></tr>
+<tr><td><code>table(builder)</code></td><td>Add a TableBuilder.</td></tr>
 <tr><td><code>nest / child / inner(builder)</code></td><td>Nest a ContainerBuilder.</td></tr>
 <tr><td><code>accent(color)</code> / <code>color / colour / border / tint / hue</code></td><td>Set accent color.</td></tr>
 <tr><td><code>hex(value)</code></td><td>Set accent from hex string.</td></tr>
@@ -530,6 +557,92 @@ async def on_report(interaction, values):
     await interaction.response.send_message(f"Reported {uid} for: {reason}", ephemeral=True)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 </div>
 
+<div class="page" id="p-file">
+<h1>FileBuilder</h1>
+<p>Builds discord.ui.File components for in-message file displays.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>reference(name)</code> / <code>named / attachment</code></td><td>Set attachment:// reference.</td></tr>
+<tr><td><code>url(url)</code></td><td>Set external URL.</td></tr>
+<tr><td><code>source(file, name=None)</code> / <code>upload</code></td><td>Set a discord.File source.</td></tr>
+<tr><td><code>from_text(content, name="file.txt")</code></td><td>Create a File from text/bytes.</td></tr>
+<tr><td><code>spoiler / hidden(state=True)</code></td><td>Mark as spoiler.</td></tr>
+<tr><td><code>id(value)</code></td><td>Set component ID.</td></tr>
+<tr><td><code>file</code> (property)</td><td>Access the underlying discord.File.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.ui.File.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>f = (
+    vex.file_component()
+    .source(discord.File("image.png"))
+    .spoiler()
+    .build()
+)
+
+view = vex.vex().file(f)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-table">
+<h1>TableBuilder</h1>
+<p>Renders markdown tables into TextDisplay components.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>title(text)</code> / <code>caption</code></td><td>Set table title.</td></tr>
+<tr><td><code>headers(*names)</code> / <code>columns / head</code></td><td>Set column headers.</td></tr>
+<tr><td><code>align(*aligns)</code></td><td>Set column alignments (l/r/c).</td></tr>
+<tr><td><code>row(*values)</code> / <code>add / record</code></td><td>Add a row.</td></tr>
+<tr><td><code>extend(items)</code></td><td>Add multiple rows.</td></tr>
+<tr><td><code>lang(language)</code> / <code>code</code></td><td>Set code block language.</td></tr>
+<tr><td><code>gap(spaces)</code></td><td>Set cell gap spacing.</td></tr>
+<tr><td><code>max_cell(width)</code></td><td>Cap cell width with ellipsis.</td></tr>
+<tr><td><code>render()</code></td><td>Return markdown string.</td></tr>
+<tr><td><code>text_display()</code> / <code>build()</code></td><td>Return discord.ui.TextDisplay.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>tbl = (
+    vex.table()
+    .headers("User", "Score", "Rank")
+    .align("l", "r", "c")
+    .row("Alice", "1200", "1")
+    .row("Bob", "950", "2")
+    .row("Carol", "875", "3")
+    .build()
+)
+
+view = vex.vex().table(tbl)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-poll">
+<h1>PollBuilder</h1>
+<p>Builds discord.Poll with fluent chaining.</p>
+<h2>API</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>question(text)</code> / <code>ask / prompt</code></td><td>Set poll question.</td></tr>
+<tr><td><code>duration(days=0, hours=0, minutes=0)</code></td><td>Set duration.</td></tr>
+<tr><td><code>hours(count)</code></td><td>Set duration in hours.</td></tr>
+<tr><td><code>days(count)</code></td><td>Set duration in days.</td></tr>
+<tr><td><code>multiple(state=True)</code></td><td>Allow multiple answers.</td></tr>
+<tr><td><code>single()</code></td><td>Restrict to single answer.</td></tr>
+<tr><td><code>answer(text, emoji=None)</code> / <code>option / choice</code></td><td>Add an answer.</td></tr>
+<tr><td><code>options(items)</code></td><td>Add answers from list.</td></tr>
+<tr><td><code>build()</code></td><td>Return discord.Poll.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>poll = (
+    vex.poll("Favourite colour?")
+    .hours(24)
+    .answer("Red", emoji="??")
+    .answer("Blue", emoji="??")
+    .answer("Green", emoji="??")
+    .build()
+)
+
+await channel.send(poll=poll)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
 <div class="page" id="p-pagination">
 <h1>Pagination</h1>
 <p>Multiple paginator implementations for browsing pages of data.</p>
@@ -622,6 +735,43 @@ tc = vex.timed_confirm("Confirm ban?", seconds=15, owner_id=interaction.user.id)
 result = await tc.confirm(interaction)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 </div>
 
+<div class="page" id="p-typed_confirm">
+<h1>Typed Confirm</h1>
+<p>Destructive-action confirmation that requires typing a phrase before the Confirm button is enabled.</p>
+<h2>TypedConfirmView</h2>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>result</code></td><td>True, False, or None.</td></tr>
+<tr><td><code>confirmed</code></td><td>Boolean check.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable boolean.</td></tr>
+<tr><td><code>reply_to / respond / ask / send_to(interaction)</code></td><td>Send/reply and wait.</td></tr>
+</table>
+<h2>Options</h2>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>prompt</code></td><td>Main question text.</td></tr>
+<tr><td><code>phrase</code></td><td>The phrase the user must type.</td></tr>
+<tr><td><code>confirm_label</code></td><td>Confirm button label.</td></tr>
+<tr><td><code>cancel_label</code></td><td>Cancel button label.</td></tr>
+<tr><td><code>field_label</code></td><td>Modal input label.</td></tr>
+<tr><td><code>case_sensitive</code></td><td>Whether phrase match is case-sensitive.</td></tr>
+<tr><td><code>timeout</code></td><td>View timeout.</td></tr>
+<tr><td><code>ephemeral</code></td><td>Send as ephemeral.</td></tr>
+<tr><td><code>owner_id</code></td><td>Restrict to a user.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>tc = vex.typed_confirm(
+    "This will delete the server. This cannot be undone.",
+    phrase="DELETE",
+    confirm_label="Delete Server",
+    field_label="Type DELETE to confirm",
+    owner_id=interaction.user.id
+)
+ok = await tc.ask(interaction)
+if ok:
+    await interaction.followup.send("Server deleted.", ephemeral=True)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
 <div class="page" id="p-choice">
 <h1>Choice & Select Prompts</h1>
 <p>Views that present options and return the user's selection.</p>
@@ -672,6 +822,94 @@ ch = await channels.reply_to(interaction)
 
 users = vex.user_picker_view("Select a moderator:", owner_id=interaction.user.id)
 mods = await users.ask(interaction)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-wizard">
+<h1>Wizard</h1>
+<p>Multi-step modal wizard for guided setup flows.</p>
+<h2>WizardStep</h2>
+<table>
+<tr><th>Property</th><th>Description</th></tr>
+<tr><td><code>title</code></td><td>Step title.</td></tr>
+<tr><td><code>fields</code></td><td>List of TextInputBuilder or TextInput instances.</td></tr>
+</table>
+<h2>Wizard</h2>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>step(title, fields)</code> / <code>add_step</code></td><td>Add a step.</td></tr>
+<tr><td><code>data</code></td><td>Dict of collected values keyed by custom_id.</td></tr>
+<tr><td><code>wait_result()</code></td><td>Awaitable dict or None if cancelled/timed out.</td></tr>
+<tr><td><code>reply_to / respond / send_to</code></td><td>Send/reply methods.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>w = vex.wizard(title="Server Setup")
+    .step("Basic Info", [
+        vex.text_input("name", "Server Name").short().required(),
+        vex.text_input("desc", "Description").paragraph().optional(),
+    ])
+    .step("Moderation", [
+        vex.text_input("mod_role", "Moderator Role ID").short(),
+    ])
+
+result = await w.reply_to(interaction, ephemeral=True)
+if result:
+    name = result["name"]
+    desc = result["desc"]</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-live">
+<h1>Live View</h1>
+<p>Auto-updating view that re-renders on an interval. Useful for dashboards, timers, or live stats.</p>
+<h2>LiveView</h2>
+<table>
+<tr><th>Property / Method</th><th>Description</th></tr>
+<tr><td><code>refresh()</code></td><td>Force an immediate re-render and edit.</td></tr>
+<tr><td><code>stop()</code></td><td>Stop the update loop.</td></tr>
+<tr><td><code>send_to / reply_to</code></td><td>Standard send methods; loop starts automatically.</td></tr>
+</table>
+<h2>Options</h2>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>renderer</code></td><td>Callable receiving the LiveView and returning components.</td></tr>
+<tr><td><code>interval</code></td><td>Seconds between updates (default 5).</td></tr>
+<tr><td><code>timeout</code></td><td>View timeout.</td></tr>
+<tr><td><code>max_updates</code></td><td>Hard cap on update count.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>def render_dashboard(lv):
+    return [
+        vex.container()
+        .h2("Live Stats")
+        .field("Uptime", "12m 34s")
+        .field("Users", str(len(guild.members)))
+        .build()
+    ]
+
+live = vex.live(render_dashboard, interval=10.0, max_updates=60)
+await live.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-media">
+<h1>Media Collector</h1>
+<p>Collects media from messages, embeds, stickers, and attachments into MediaGallery components.</p>
+<h2>MediaCollector</h2>
+<table>
+<tr><th>Method</th><th>Description</th></tr>
+<tr><td><code>url(url, description="", spoiler=False)</code></td><td>Add a URL item.</td></tr>
+<tr><td><code>file(file, description="", spoiler=False)</code></td><td>Add a discord.File item.</td></tr>
+<tr><td><code>attachment(attachment, use_cached=True)</code></td><td>Download and add a discord.Attachment.</td></tr>
+<tr><td><code>from_message(message, download=True, max_bytes=None)</code></td><td>Scrape all media from a message.</td></tr>
+<tr><td><code>galleries()</code></td><td>Return list of MediaGallery (chunked to 10).</td></tr>
+<tr><td><code>files()</code></td><td>Return list of discord.File.</td></tr>
+<tr><td><code>has_media</code></td><td>Property; whether any items were collected.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>collector = vex.media_collector()
+await collector.from_message(message, download=True)
+
+if collector.has_media:
+    view = vex.vex().add_galleries(collector)
+    await channel.send(view=view, files=collector.files())</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 </div>
 
 <div class="page" id="p-help_registry">
@@ -791,6 +1029,7 @@ if global_cd.is_limited("cmd_name", message):
 <tr><td><code>error_card(message, title="Error")</code></td><td>Red accent container.</td></tr>
 <tr><td><code>success_card(message, title="Success")</code></td><td>Green accent container.</td></tr>
 <tr><td><code>info_card(message, title="Info")</code></td><td>Blue accent container.</td></tr>
+<tr><td><code>warning_card(message, title="Warning")</code></td><td>Yellow accent container.</td></tr>
 <tr><td><code>audit_card(action, actor, target=None, reason=None, fields=None, color=None)</code></td><td>Audit log style container.</td></tr>
 <tr><td><code>diff_card(title="Changes", before={}, after={}, color=None)</code></td><td>Before/after diff container.</td></tr>
 </table>
@@ -800,6 +1039,9 @@ await vex.vex().container(err).reply_to(interaction, ephemeral=True)
 
 ok = vex.success_card("Settings saved.")
 await vex.vex().container(ok).reply_to(interaction, ephemeral=True)
+
+warn = vex.warning_card("Rate limit approaching.")
+await vex.vex().container(warn).reply_to(interaction, ephemeral=True)
 
 audit = vex.audit_card(
     action="Ban",
@@ -817,6 +1059,42 @@ diff = vex.diff_card(
     after={"Name": "Moderator", "Color": "#ffffff"}
 )
 await channel.send(view=vex.vex().container(diff))</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-themes">
+<h1>Themes</h1>
+<p>Global colour theming for utility cards and UI accents.</p>
+<h2>Theme</h2>
+<table>
+<tr><th>Property</th><th>Default</th></tr>
+<tr><td><code>error</code></td><td>#ed4245</td></tr>
+<tr><td><code>success</code></td><td>#57f287</td></tr>
+<tr><td><code>info</code></td><td>#5865f2</td></tr>
+<tr><td><code>warning</code></td><td>#fee75c</td></tr>
+<tr><td><code>accent</code></td><td>#5865f2</td></tr>
+<tr><td><code>muted</code></td><td>#4f545c</td></tr>
+</table>
+<h2>API</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>theme()</code></td><td>Return the active Theme instance.</td></tr>
+<tr><td><code>set_theme(**colors)</code></td><td>Override theme colours by name.</td></tr>
+<tr><td><code>use_theme(custom)</code></td><td>Replace the global theme entirely.</td></tr>
+<tr><td><code>color(name)</code> / <code>colour</code></td><td>Get a colour from the theme.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>vex.set_theme(error="#ff4444", success="#44ff44")
+
+my_theme = vex.Theme(
+    error="#ff0000",
+    success="#00ff00",
+    info="#0000ff",
+    warning="#ffff00"
+)
+vex.use_theme(my_theme)
+
+card = vex.error_card("Something broke.")
+await vex.vex().container(card).reply_to(interaction)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 </div>
 
 <div class="page" id="p-errors">
@@ -862,6 +1140,10 @@ if not channel.nsfw:
 <tr><td><code>safe_defer(interaction, ephemeral=False, thinking=False)</code></td><td>Defer only if not already responded.</td></tr>
 <tr><td><code>safe_edit(interaction, view=None, allowed_mentions=None)</code></td><td>Edit safely, swallowing HTTP exceptions.</td></tr>
 <tr><td><code>safe_delete(interaction)</code></td><td>Delete original response safely.</td></tr>
+<tr><td><code>progress(value, maximum, **opts)</code></td><td>Render a text progress bar.</td></tr>
+<tr><td><code>bar / meter</code></td><td>Aliases for progress.</td></tr>
+<tr><td><code>text_file(content, filename, spoiler=False)</code></td><td>Create a discord.File from text/bytes.</td></tr>
+<tr><td><code>bytes_file / file_from_text</code></td><td>Aliases for text_file.</td></tr>
 </table>
 <h2>PromptInput</h2>
 <p>Message-based user input collector.</p>
@@ -899,58 +1181,10 @@ adv = vex.auto_delete(timeout=10)
 await adv.send_to(channel, content="This deletes in 10s")
 
 grad = vex.gradient("#ff0000", "#00ff00")
-await grad.apply(role, reason="Seasonal colour")</code><button class="copy" onclick="copy(this)">Copy</button></pre>
-</div>
+await grad.apply(role, reason="Seasonal colour")
 
-<div class="page" id="p-factories">
-<h1>Factory Functions</h1>
-<p>Top-level convenience constructors.</p>
-<table>
-<tr><th>Function</th><th>Returns</th></tr>
-<tr><td><code>vex(timeout=180)</code> / <code>new / build / create / make / layout / view / message</code></td><td>Vex</td></tr>
-<tr><td><code>button()</code> / <code>btn()</code></td><td>ButtonBuilder</td></tr>
-<tr><td><code>select()</code> / <code>dropdown()</code></td><td>SelectBuilder</td></tr>
-<tr><td><code>channel_select()</code> / <code>channel_picker()</code></td><td>TypedSelectBuilder("channel")</td></tr>
-<tr><td><code>user_select()</code> / <code>user_picker()</code></td><td>TypedSelectBuilder("user")</td></tr>
-<tr><td><code>role_select()</code> / <code>role_picker()</code></td><td>TypedSelectBuilder("role")</td></tr>
-<tr><td><code>mentionable_select()</code></td><td>TypedSelectBuilder("mentionable")</td></tr>
-<tr><td><code>action_row(id=None)</code> / <code>row(id=None)</code></td><td>ActionRowBuilder</td></tr>
-<tr><td><code>section()</code> / <code>aside()</code> / <code>panel()</code></td><td>SectionBuilder</td></tr>
-<tr><td><code>gallery(id=None)</code> / <code>images / media(id=None)</code></td><td>GalleryBuilder</td></tr>
-<tr><td><code>container(id=None)</code> / <code>box / card / frame(id=None)</code></td><td>ContainerBuilder</td></tr>
-<tr><td><code>gradient(primary, secondary=None, tertiary=None)</code></td><td>GradientColours</td></tr>
-<tr><td><code>paginator(...)</code> / <code>paginate(...)</code> / <code>pages(...)</code></td><td>Paginator</td></tr>
-<tr><td><code>modal(title="Form")</code> / <code>form / prompt(title="Form")</code></td><td>ModalBuilder</td></tr>
-<tr><td><code>text_input(key, label)</code> / <code>field_input(key, label)</code></td><td>TextInputBuilder</td></tr>
-<tr><td><code>confirm_view(...)</code> / <code>confirm(...)</code> / <code>ask(...)</code></td><td>ConfirmView</td></tr>
-<tr><td><code>multi_confirm(...)</code></td><td>MultiConfirmView</td></tr>
-<tr><td><code>timed_confirm(...)</code></td><td>TimedConfirmView</td></tr>
-<tr><td><code>choice_view(...)</code> / <code>choice(...)</code></td><td>ChoiceView</td></tr>
-<tr><td><code>select_menu(...)</code> / <code>pick(...)</code></td><td>SelectMenu</td></tr>
-<tr><td><code>presence(profile, bot=None)</code></td><td>(top-level) apply PresenceHandler profile</td></tr>
-<tr><td><code>role_picker(...)</code></td><td>RolePickerView</td></tr>
-<tr><td><code>channel_picker_view(...)</code></td><td>ChannelPickerView</td></tr>
-<tr><td><code>user_picker_view(...)</code></td><td>UserPickerView</td></tr>
-<tr><td><code>prompt_input(...)</code> / <code>wait_input(...)</code></td><td>PromptInput</td></tr>
-<tr><td><code>auto_delete(timeout=30)</code></td><td>AutoDeleteView</td></tr>
-<tr><td><code>cooldown_store(...)</code></td><td>CooldownStore</td></tr>
-<tr><td><code>global_cooldown(...)</code></td><td>GlobalCooldown</td></tr>
-<tr><td><code>cooldown_card(...)</code></td><td>ContainerBuilder</td></tr>
-<tr><td><code>audit_card(...)</code></td><td>ContainerBuilder</td></tr>
-<tr><td><code>diff_card(...)</code></td><td>ContainerBuilder</td></tr>
-<tr><td><code>grouped_paginator(...)</code></td><td>GroupedPaginator</td></tr>
-<tr><td><code>scroll_paginator(...)</code></td><td>ScrollPaginator</td></tr>
-</table>
-<h2>Example</h2>
-<pre><code>view = vex.new()
-btn = vex.btn().label("OK").primary()
-row = vex.row().btn(btn)
-card = vex.card().text("Hello")
-pg = vex.pages(data, renderer=render)
-mc = vex.multi_confirm(threshold=2)
-scroll = vex.scroll_paginator(pages, renderer=render)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
-<hr>
-<p style="color:var(--text2);font-size:0.9em;">Vex V2 Docs &mdash; MIT License</p>
+bar = vex.progress(7, 10, width=10)
+await channel.send(f"Loading: {bar}")</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 </div>
 
 <div class="page" id="p-presence">
@@ -1024,6 +1258,107 @@ print(vex.PresenceHandler.profiles())
 # ['desktop', 'mac', 'linux', 'mobile', 'android', 'vr', 'web', 'embedded']</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 </div>
 
+<div class="page" id="p-persistence">
+<h1>Persistence</h1>
+<p>Register LayoutViews with the bot so they survive restarts and continue to handle interactions after a reboot.</p>
+<h2>Requirements</h2>
+<ul>
+<li>The view must be created with <code>timeout=None</code>.</li>
+<li>Every interactive component (buttons without URLs, selects) must have a <code>custom_id</code>.</li>
+</ul>
+<h2>API</h2>
+<table>
+<tr><th>Function</th><th>Description</th></tr>
+<tr><td><code>persist(view, bot)</code></td><td>Validate and register a view with the bot.</td></tr>
+<tr><td><code>register_view(view, bot)</code></td><td>Alias for persist.</td></tr>
+<tr><td><code>make_persistent(view, bot)</code></td><td>Alias for persist.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>view = vex.vex(timeout=None)
+view.button(
+    vex.button()
+    .label("Persist")
+    .primary()
+    .custom_id("persist_btn")
+    .on_click(on_click)
+)
+
+vex.persist(view, bot)
+
+# In a cog setup:
+async def setup(bot):
+    my_view = vex.vex(timeout=None)
+    my_view.button(vex.button().label("Ticket").custom_id("ticket_btn").on_click(open_ticket))
+    vex.register_view(my_view, bot)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-factories">
+<h1>Factory Functions</h1>
+<p>Top-level convenience constructors.</p>
+<table>
+<tr><th>Function</th><th>Returns</th></tr>
+<tr><td><code>vex(timeout=180)</code> / <code>new / build / create / make / layout / view / message</code></td><td>Vex</td></tr>
+<tr><td><code>button()</code> / <code>btn()</code></td><td>ButtonBuilder</td></tr>
+<tr><td><code>select()</code> / <code>dropdown()</code></td><td>SelectBuilder</td></tr>
+<tr><td><code>channel_select()</code> / <code>channel_picker()</code></td><td>TypedSelectBuilder("channel")</td></tr>
+<tr><td><code>user_select()</code> / <code>user_picker()</code></td><td>TypedSelectBuilder("user")</td></tr>
+<tr><td><code>role_select()</code> / <code>role_picker()</code></td><td>TypedSelectBuilder("role")</td></tr>
+<tr><td><code>mentionable_select()</code></td><td>TypedSelectBuilder("mentionable")</td></tr>
+<tr><td><code>action_row(id=None)</code> / <code>row(id=None)</code></td><td>ActionRowBuilder</td></tr>
+<tr><td><code>section()</code> / <code>aside()</code> / <code>panel()</code></td><td>SectionBuilder</td></tr>
+<tr><td><code>gallery(id=None)</code> / <code>images / media(id=None)</code></td><td>GalleryBuilder</td></tr>
+<tr><td><code>media_collector()</code> / <code>collector()</code></td><td>MediaCollector</td></tr>
+<tr><td><code>file_component(id=None)</code> / <code>file / document(id=None)</code></td><td>FileBuilder</td></tr>
+<tr><td><code>table(title=None)</code> / <code>leaderboard(title=None)</code></td><td>TableBuilder</td></tr>
+<tr><td><code>container(id=None)</code> / <code>box / card / frame(id=None)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>gradient(primary, secondary=None, tertiary=None)</code></td><td>GradientColours</td></tr>
+<tr><td><code>paginator(...)</code> / <code>paginate(...)</code> / <code>pages(...)</code></td><td>Paginator</td></tr>
+<tr><td><code>modal(title="Form")</code> / <code>form / prompt(title="Form")</code></td><td>ModalBuilder</td></tr>
+<tr><td><code>text_input(key, label)</code> / <code>field_input(key, label)</code></td><td>TextInputBuilder</td></tr>
+<tr><td><code>confirm_view(...)</code> / <code>confirm(...)</code> / <code>ask(...)</code></td><td>ConfirmView</td></tr>
+<tr><td><code>multi_confirm(...)</code></td><td>MultiConfirmView</td></tr>
+<tr><td><code>timed_confirm(...)</code></td><td>TimedConfirmView</td></tr>
+<tr><td><code>typed_confirm(...)</code></td><td>TypedConfirmView</td></tr>
+<tr><td><code>choice_view(...)</code> / <code>choice(...)</code></td><td>ChoiceView</td></tr>
+<tr><td><code>select_menu(...)</code> / <code>pick(...)</code></td><td>SelectMenu</td></tr>
+<tr><td><code>presence(profile, bot=None)</code></td><td>(top-level) apply PresenceHandler profile</td></tr>
+<tr><td><code>role_picker(...)</code></td><td>RolePickerView</td></tr>
+<tr><td><code>channel_picker_view(...)</code></td><td>ChannelPickerView</td></tr>
+<tr><td><code>user_picker_view(...)</code></td><td>UserPickerView</td></tr>
+<tr><td><code>prompt_input(...)</code> / <code>wait_input(...)</code></td><td>PromptInput</td></tr>
+<tr><td><code>auto_delete(timeout=30)</code></td><td>AutoDeleteView</td></tr>
+<tr><td><code>cooldown_store(...)</code></td><td>CooldownStore</td></tr>
+<tr><td><code>global_cooldown(...)</code></td><td>GlobalCooldown</td></tr>
+<tr><td><code>cooldown_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>audit_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>diff_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>error_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>success_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>info_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>warning_card(...)</code></td><td>ContainerBuilder</td></tr>
+<tr><td><code>grouped_paginator(...)</code></td><td>GroupedPaginator</td></tr>
+<tr><td><code>scroll_paginator(...)</code></td><td>ScrollPaginator</td></tr>
+<tr><td><code>wizard(...)</code></td><td>Wizard</td></tr>
+<tr><td><code>live(...)</code></td><td>LiveView</td></tr>
+<tr><td><code>poll(question="")</code> / <code>survey(question="")</code></td><td>PollBuilder</td></tr>
+<tr><td><code>theme()</code></td><td>Theme</td></tr>
+<tr><td><code>set_theme(**colors)</code></td><td>Theme</td></tr>
+<tr><td><code>use_theme(custom)</code></td><td>Theme</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>view = vex.new()
+btn = vex.btn().label("OK").primary()
+row = vex.row().btn(btn)
+card = vex.card().text("Hello")
+pg = vex.pages(data, renderer=render)
+mc = vex.multi_confirm(threshold=2)
+scroll = vex.scroll_paginator(pages, renderer=render)
+wiz = vex.wizard().step("Name", [vex.text_input("n", "Name")])
+live = vex.live(render_fn, interval=5.0)
+poll = vex.poll("Best language?").answer("Python").answer("Rust")</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+<hr>
+<p style="color:var(--text2);font-size:0.9em;">Vex V2.2 Docs &mdash; MIT License</p>
+</div>
 
 </main>
 </div>
