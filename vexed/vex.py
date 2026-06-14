@@ -1,10 +1,27 @@
 from __future__ import annotations
 import asyncio
 import io
+import os
+import sys
+import inspect
+import logging
 import datetime
+import importlib
+import traceback
+import pkgutil
 import discord
+from discord import app_commands
 from discord.ext import commands
 from typing import Self, Callable, Awaitable, Any
+
+
+def _new_future() -> "asyncio.Future[Any]":
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.create_future()
 
 
 async def _busy_reply(interaction: discord.Interaction, message: str) -> None:
@@ -270,7 +287,7 @@ class ButtonBuilder:
         state: dict[str, Any] = {"used": False, "last": 0.0, "running": False}
 
         async def guarded(interaction: discord.Interaction) -> None:
-            now = asyncio.get_event_loop().time()
+            now = asyncio.get_running_loop().time()
             blocked = (
                 state["running"]
                 or (once and state["used"])
@@ -369,17 +386,7 @@ class SelectBuilder:
 
     def option(self, label: str, value: str) -> SelectOptionBuilder:
         builder = SelectOptionBuilder(label, value)
-        self._options.append(None)  # type: ignore
-        _idx = len(self._options) - 1
-
-        original_build = builder.build
-
-        def _capture() -> discord.SelectOption:
-            opt = original_build()
-            self._options[_idx] = opt
-            return opt
-
-        builder.build = _capture  # type: ignore
+        self._options.append(builder)
         return builder
 
     def add(self, label: str, value: str, *, description: str | None = None, emoji: Any = None, default: bool = False) -> Self:
@@ -462,7 +469,11 @@ class SelectBuilder:
 
     def build(self) -> discord.ui.Select:
         kwargs: dict[str, Any] = {
-            "options": [o for o in self._options if o is not None],
+            "options": [
+                o.build() if isinstance(o, SelectOptionBuilder) else o
+                for o in self._options
+                if o is not None
+            ],
             "min_values": self._min_values,
             "max_values": self._max_values,
             "disabled": self._disabled,
@@ -2643,34 +2654,98 @@ class CommandInfo:
         self.category: str = "General"
         self.hidden: bool = False
         self.aliases: list[str] = []
+        self._name_locked: bool = False
+        self._desc_locked: bool = False
+        self._desc_user_locked: bool = False
 
 
-def _attach_meta(func: Any, **kwargs: Any) -> CommandInfo:
-    if not hasattr(func, "__vex_help__"):
-        func.__vex_help__ = CommandInfo(getattr(func, "__name__", "unknown"), func)
-    info = func.__vex_help__
-    for k, v in kwargs.items():
-        setattr(info, k, v)
+def _unwrap_callback(obj: Any) -> Any:
+    callback = getattr(obj, "callback", None)
+    if callback is not None and callable(callback):
+        return callback
+    return obj
+
+
+def _attach_meta(obj: Any, *, lock_name: bool = False, lock_desc: bool = False, user_desc: bool = False, **kwargs: Any) -> CommandInfo:
+    target = _unwrap_callback(obj)
+    info = getattr(target, "__vex_help__", None)
+    if info is None:
+        default_name = getattr(target, "__name__", None) or getattr(obj, "name", None) or "unknown"
+        info = CommandInfo(default_name, target)
+        try:
+            setattr(target, "__vex_help__", info)
+        except (AttributeError, TypeError):
+            try:
+                setattr(obj, "__vex_help__", info)
+            except (AttributeError, TypeError):
+                pass
+    for key, value in kwargs.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and value == "":
+            continue
+        if key == "aliases":
+            if not value:
+                continue
+            for alias in value:
+                if alias not in info.aliases:
+                    info.aliases.append(alias)
+            continue
+        if key == "name":
+            if info._name_locked and not lock_name:
+                continue
+            if lock_name:
+                info._name_locked = True
+        elif key == "description":
+            if info._desc_user_locked and not user_desc:
+                continue
+            if info._desc_locked and not lock_desc and not user_desc:
+                continue
+            if user_desc:
+                info._desc_user_locked = True
+                info._desc_locked = True
+            elif lock_desc:
+                info._desc_locked = True
+        setattr(info, key, value)
+    return info
+
+
+def _apply_command_meta(
+    obj: Any,
+    command_name: str,
+    *,
+    description: str | None,
+    resolved: str,
+    category: str | None = None,
+    aliases: list[str] | None = None,
+) -> CommandInfo:
+    info = _attach_meta(obj, lock_name=True, name=command_name, category=category, aliases=aliases)
+    if description is not None:
+        _attach_meta(obj, lock_desc=True, description=description)
+    elif resolved and resolved != "\u2026":
+        if not info._desc_locked and not info._desc_user_locked and not info.description:
+            info.description = resolved
     return info
 
 
 def cmd(name: str | Callable[..., Any] | None = None, *, aliases: list[str] | None = None) -> Callable[[Any], Any]:
-    def decorator(func: Any) -> Any:
-        actual_name = name if isinstance(name, str) else getattr(func, "__name__", "unknown")
-        info = CommandInfo(actual_name, func)
+    def decorator(obj: Any) -> Any:
+        meta: dict[str, Any] = {}
+        if isinstance(name, str):
+            meta["name"] = name
         if aliases:
-            info.aliases = aliases
-        func.__vex_help__ = info
-        return func
-    if callable(name):
+            meta["aliases"] = aliases
+        _attach_meta(obj, **meta)
+        return obj
+    if callable(name) and not isinstance(name, str):
         return decorator(name)
     return decorator
 
 
 def cmd_desc(text: str) -> Callable[[Any], Any]:
-    def decorator(func: Any) -> Any:
-        _attach_meta(func, description=text)
-        return func
+    def decorator(obj: Any) -> Any:
+        _attach_meta(obj, user_desc=True, description=text)
+        return obj
     return decorator
 
 
@@ -2707,7 +2782,6 @@ class HelpRegistry:
         self._commands: dict[str, CommandInfo] = {}
 
     def scan(self, obj: Any) -> Self:
-        import inspect
         seen: set[str] = set()
         targets = [obj]
         if not inspect.isclass(obj):
@@ -2931,7 +3005,7 @@ class ConfirmView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: bool | None = None
-        self._future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[bool] = _new_future()
 
         confirm_btn = discord.ui.Button(
             style=discord.ButtonStyle.success,
@@ -3068,126 +3142,6 @@ def ask(
     return ConfirmView(prompt=prompt, owner_id=owner_id, ephemeral=ephemeral)
 
 
-__all__ = [
-    "Vex",
-    "Paginator",
-    "ButtonBuilder",
-    "SelectBuilder",
-    "SelectOptionBuilder",
-    "ActionRowBuilder",
-    "SectionBuilder",
-    "GalleryBuilder",
-    "ContainerBuilder",
-    "TypedSelectBuilder",
-    "ModalBuilder",
-    "TextInputBuilder",
-    "PageRenderer",
-    "GradientColours",
-    "vex",
-    "new",
-    "build",
-    "create",
-    "make",
-    "layout",
-    "view",
-    "message",
-    "button",
-    "btn",
-    "select",
-    "dropdown",
-    "channel_select",
-    "channel_picker",
-    "user_select",
-    "user_picker",
-    "role_select",
-    "role_picker",
-    "mentionable_select",
-    "action_row",
-    "row",
-    "section",
-    "aside",
-    "panel",
-    "gallery",
-    "images",
-    "media",
-    "container",
-    "box",
-    "card",
-    "frame",
-    "gradient",
-    "paginator",
-    "paginate",
-    "pages",
-    "modal",
-    "form",
-    "prompt",
-    "text_input",
-    "field_input",
-    "CommandInfo",
-    "cmd",
-    "cmd_desc",
-    "cmd_syntax",
-    "cmd_example",
-    "cmd_category",
-    "cmd_hidden",
-    "HelpRegistry",
-    "registry",
-    "VexError",
-    "ConfirmView",
-    "confirm_view",
-    "confirm",
-    "ask",
-    "MultiConfirmView",
-    "multi_confirm",
-    "TimedConfirmView",
-    "timed_confirm",
-    "ChoiceView",
-    "choice_view",
-    "choice",
-    "JumpSelectPaginator",
-    "PageGroup",
-    "grouped_paginator",
-    "InfinitePaginator",
-    "ScrollPaginator",
-    "scroll_paginator",
-    "PromptInput",
-    "prompt_input",
-    "wait_input",
-    "edit_to_v2",
-    "disable_all",
-    "freeze_view",
-    "AutoDeleteView",
-    "auto_delete",
-    "error_card",
-    "success_card",
-    "info_card",
-    "SelectMenu",
-    "select_menu",
-    "pick",
-    "RolePickerView",
-    "role_picker",
-    "ChannelPickerView",
-    "channel_picker_view",
-    "UserPickerView",
-    "user_picker_view",
-    "CooldownStore",
-    "cooldown_store",
-    "GlobalCooldown",
-    "global_cooldown",
-    "CooldownCard",
-    "cooldown_card",
-    "cmd_alias",
-    "HelpRegistry",
-    "safe_defer",
-    "safe_edit",
-    "safe_delete",
-    "AuditCard",
-    "audit_card",
-    "DiffCard",
-    "diff_card",
-]
-
-
 class MultiConfirmView(discord.ui.LayoutView):
     def __init__(
         self,
@@ -3205,7 +3159,7 @@ class MultiConfirmView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._confirmed_by: set[int] = set()
         self._cancelled: bool = False
-        self._future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[bool] = _new_future()
 
         confirm_btn = discord.ui.Button(
             style=discord.ButtonStyle.success,
@@ -3326,7 +3280,7 @@ class TimedConfirmView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: bool | None = None
-        self._future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[bool] = _new_future()
         self._message: discord.Message | None = None
         self._tick_task: asyncio.Task[None] | None = None
 
@@ -3465,7 +3419,7 @@ class ChoiceView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: str | None = None
-        self._future: asyncio.Future[str | None] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[str | None] = _new_future()
 
         self.add_item(discord.ui.TextDisplay(prompt))
         buttons: list[discord.ui.Button] = []
@@ -4275,7 +4229,7 @@ class SelectMenu(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: list[str] | None = None
-        self._future: asyncio.Future[list[str] | None] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[list[str] | None] = _new_future()
 
         self.add_item(discord.ui.TextDisplay(prompt))
         select_options = [
@@ -4383,7 +4337,7 @@ class RolePickerView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: list[discord.Role] | None = None
-        self._future: asyncio.Future[list[discord.Role] | None] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[list[discord.Role] | None] = _new_future()
 
         self.add_item(discord.ui.TextDisplay(prompt))
         sel = discord.ui.RoleSelect(
@@ -4480,7 +4434,7 @@ class ChannelPickerView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: list[Any] | None = None
-        self._future: asyncio.Future[list[Any] | None] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[list[Any] | None] = _new_future()
 
         self.add_item(discord.ui.TextDisplay(prompt))
         sel_kwargs: dict[str, Any] = {
@@ -4579,7 +4533,7 @@ class UserPickerView(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._owner_id = owner_id
         self._result: list[discord.Member | discord.User] | None = None
-        self._future: asyncio.Future[list[discord.Member | discord.User] | None] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[list[discord.Member | discord.User] | None] = _new_future()
 
         self.add_item(discord.ui.TextDisplay(prompt))
         sel = discord.ui.UserSelect(
@@ -4691,7 +4645,7 @@ class CooldownStore:
         bucket = self._mapping.get_bucket(message)
         if bucket is None:
             return 0
-        return max(0, bucket.rate - bucket._tokens)  # type: ignore[attr-defined]
+        return max(0, bucket.rate - bucket._tokens)
 
 
 def cooldown_store(
@@ -4770,12 +4724,11 @@ def cooldown_card(retry_after: float, *, title: str = "Slow down") -> ContainerB
 
 
 def cmd_alias(alias: str) -> Callable[[Any], Any]:
-    def decorator(func: Any) -> Any:
-        if not hasattr(func, "__vex_help__"):
-            func.__vex_help__ = CommandInfo(getattr(func, "__name__", "unknown"), func)
-        if alias not in func.__vex_help__.aliases:
-            func.__vex_help__.aliases.append(alias)
-        return func
+    def decorator(obj: Any) -> Any:
+        info = _attach_meta(obj)
+        if alias not in info.aliases:
+            info.aliases.append(alias)
+        return obj
     return decorator
 
 
@@ -5304,7 +5257,7 @@ class TypedConfirmView(discord.ui.LayoutView):
         self._owner_id = owner_id
         self._result: bool | None = None
         self._field_label = field_label or f"Type {phrase} to confirm"
-        self._future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[bool] = _new_future()
         confirm_btn = discord.ui.Button(style=discord.ButtonStyle.danger, label=confirm_label, custom_id="vex_typed_yes")
         cancel_btn = discord.ui.Button(style=discord.ButtonStyle.secondary, label=cancel_label, custom_id="vex_typed_no")
         confirm_btn.callback = self._open_modal
@@ -5452,7 +5405,7 @@ class Wizard(discord.ui.LayoutView):
         self._ephemeral = ephemeral
         self._index = 0
         self._data: dict[str, str] = {}
-        self._future: asyncio.Future[dict[str, str] | None] = asyncio.get_event_loop().create_future()
+        self._future: asyncio.Future[dict[str, str] | None] = _new_future()
 
     def step(self, title: str, fields: list[Any]) -> Self:
         self._steps.append(WizardStep(title, fields))
@@ -5683,3 +5636,1362 @@ def live(
     max_updates: int | None = None,
 ) -> LiveView:
     return LiveView(renderer, interval=interval, timeout=timeout, max_updates=max_updates)
+
+
+_log = logging.getLogger("vex")
+
+_PENDING_APP_COMMANDS: list[Any] = []
+_PENDING_TEXT_COMMANDS: list[Any] = []
+
+
+def _is_class_scoped(func: Any) -> bool:
+    qualname = getattr(func, "__qualname__", "")
+    if "." not in qualname:
+        return False
+    parent = qualname.rsplit(".", 1)[0]
+    return not parent.endswith("<locals>")
+
+
+def _short_doc(func: Any) -> str:
+    doc = inspect.getdoc(func)
+    if not doc:
+        return ""
+    first = doc.strip().splitlines()[0].strip()
+    return first[:100]
+
+
+def _resolve_description(func: Any, supplied: str | None) -> str:
+    if supplied:
+        return supplied[:100]
+    inferred = _short_doc(func)
+    return inferred or "\u2026"
+
+
+def _as_object(value: int | discord.abc.Snowflake) -> discord.Object:
+    if isinstance(value, discord.Object):
+        return value
+    snowflake_id = getattr(value, "id", None)
+    if snowflake_id is not None:
+        return discord.Object(id=int(snowflake_id))
+    return discord.Object(id=int(value))
+
+
+def _normalise_guilds(
+    guild: int | discord.abc.Snowflake | None,
+    guilds: list[int | discord.abc.Snowflake] | None,
+) -> list[discord.Object] | None:
+    collected: list[discord.Object] = []
+    if guild is not None:
+        collected.append(_as_object(guild))
+    if guilds:
+        for entry in guilds:
+            collected.append(_as_object(entry))
+    return collected or None
+
+
+def slash_cmd(
+    name: str | Callable[..., Any] | None = None,
+    *,
+    description: str | None = None,
+    guild: int | discord.abc.Snowflake | None = None,
+    guilds: list[int | discord.abc.Snowflake] | None = None,
+    nsfw: bool = False,
+    category: str | None = None,
+    extras: dict[str, Any] | None = None,
+) -> Any:
+    direct: Any = None
+    if callable(name) and not isinstance(name, str):
+        direct = name
+        name = None
+
+    def decorator(func: Any) -> app_commands.Command:
+        command_name = (name or getattr(func, "__name__", "command")).lower().replace(" ", "-")
+        resolved = _resolve_description(func, description)
+        command = app_commands.command(name=command_name, description=resolved)(func)
+        if nsfw:
+            command.nsfw = True
+        if extras:
+            command.extras.update(extras)
+        _apply_command_meta(func, command_name, description=description, resolved=resolved, category=category)
+        targets = _normalise_guilds(guild, guilds)
+        if targets is not None:
+            setattr(command, "_vex_guilds", targets)
+        setattr(command, "_vex_kind", "slash")
+        _drain_pending_checks(func, command)
+        if not _is_class_scoped(func):
+            _PENDING_APP_COMMANDS.append(command)
+        return command
+
+    if direct is not None:
+        return decorator(direct)
+    return decorator
+
+
+def hybrid_cmd(
+    name: str | Callable[..., Any] | None = None,
+    *,
+    description: str | None = None,
+    aliases: list[str] | None = None,
+    guild: int | discord.abc.Snowflake | None = None,
+    guilds: list[int | discord.abc.Snowflake] | None = None,
+    with_app_command: bool = True,
+    category: str | None = None,
+    extras: dict[str, Any] | None = None,
+) -> Any:
+    direct: Any = None
+    if callable(name) and not isinstance(name, str):
+        direct = name
+        name = None
+
+    def decorator(func: Any) -> commands.HybridCommand:
+        command_name = name or getattr(func, "__name__", "command")
+        resolved = _resolve_description(func, description)
+        command = commands.hybrid_command(
+            name=command_name,
+            description=resolved,
+            aliases=aliases or [],
+            with_app_command=with_app_command,
+            extras=extras or {},
+        )(func)
+        _apply_command_meta(func, command_name, description=description, resolved=resolved, category=category, aliases=aliases)
+        targets = _normalise_guilds(guild, guilds)
+        if targets is not None:
+            setattr(command, "_vex_guilds", targets)
+        setattr(command, "_vex_kind", "hybrid")
+        _drain_pending_checks(func, command)
+        if not _is_class_scoped(func):
+            _PENDING_TEXT_COMMANDS.append(command)
+        return command
+
+    if direct is not None:
+        return decorator(direct)
+    return decorator
+
+
+def _wants_argument(cls: type) -> bool:
+    try:
+        signature = inspect.signature(cls.__init__)
+    except (ValueError, TypeError):
+        return False
+    parameters = [
+        param
+        for param in signature.parameters.values()
+        if param.name != "self" and param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)
+    ]
+    return len(parameters) >= 1
+
+
+class Bot(commands.Bot):
+    def __init__(
+        self,
+        command_prefix: Any = "!",
+        *,
+        intents: discord.Intents | None = None,
+        description: str | None = None,
+        owner_id: int | None = None,
+        owner_ids: set[int] | None = None,
+        help_command: Any = "keep",
+        message_content: bool = False,
+        members: bool = False,
+        presences: bool = False,
+        cogs: list[str] | str | None = None,
+        auto_sync: bool = False,
+        sync_guild: int | discord.abc.Snowflake | None = None,
+        case_insensitive: bool = True,
+        strip_after_prefix: bool = True,
+        on_ready_log: bool = True,
+        handle_errors: bool = True,
+        setup: Callable[["Bot"], Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if intents is None:
+            intents = discord.Intents.default()
+            intents.message_content = message_content
+            intents.members = members
+            intents.presences = presences
+        if help_command != "keep":
+            kwargs["help_command"] = help_command
+        super().__init__(
+            command_prefix=command_prefix,
+            intents=intents,
+            description=description,
+            owner_id=owner_id,
+            owner_ids=owner_ids,
+            case_insensitive=case_insensitive,
+            strip_after_prefix=strip_after_prefix,
+            **kwargs,
+        )
+        self._auto_sync = auto_sync
+        self._sync_guild = _as_object(sync_guild) if sync_guild is not None else None
+        self._cog_targets: list[str] = [cogs] if isinstance(cogs, str) else list(cogs or [])
+        self._post_setup = setup
+        self._on_ready_log = on_ready_log
+        self._handle_errors = handle_errors
+        self._announced = False
+        if handle_errors:
+            self.tree.error(self._tree_error)
+
+    def _add_app_command(self, command: app_commands.Command) -> None:
+        targets = getattr(command, "_vex_guilds", None)
+        if targets:
+            self.tree.add_command(command, guilds=targets)
+        else:
+            self.tree.add_command(command)
+
+    def _add_text_command(self, command: commands.Command) -> None:
+        targets = getattr(command, "_vex_guilds", None)
+        if targets:
+            try:
+                app_commands.guilds(*targets)(command)
+            except Exception:
+                pass
+        if self.get_command(command.name) is None:
+            self.add_command(command)
+
+    def _adopt_app_command(self, command: app_commands.Command) -> None:
+        if command in _PENDING_APP_COMMANDS:
+            _PENDING_APP_COMMANDS.remove(command)
+        self._add_app_command(command)
+
+    def _adopt_text_command(self, command: commands.Command) -> None:
+        if command in _PENDING_TEXT_COMMANDS:
+            _PENDING_TEXT_COMMANDS.remove(command)
+        self._add_text_command(command)
+
+    async def _register_pending(self) -> None:
+        for command in list(_PENDING_APP_COMMANDS):
+            try:
+                self._add_app_command(command)
+            except app_commands.CommandAlreadyRegistered:
+                pass
+        _PENDING_APP_COMMANDS.clear()
+        for command in list(_PENDING_TEXT_COMMANDS):
+            self._add_text_command(command)
+        _PENDING_TEXT_COMMANDS.clear()
+        for event_name, callback in list(_PENDING_LISTENERS):
+            self.add_listener(callback, name=event_name)
+        _PENDING_LISTENERS.clear()
+
+    @staticmethod
+    def _discover_extensions(target: str) -> list[str]:
+        looks_like_path = (
+            os.sep in target
+            or (os.altsep and os.altsep in target)
+            or target.endswith(".py")
+            or os.path.isdir(target)
+        )
+        if looks_like_path:
+            path = os.path.abspath(target)
+            if path.endswith(".py"):
+                directory = os.path.dirname(path)
+                package = os.path.basename(directory)
+                module = os.path.splitext(os.path.basename(path))[0]
+                parent = os.path.dirname(directory)
+                if parent not in sys.path:
+                    sys.path.insert(0, parent)
+                return [f"{package}.{module}"]
+            package = os.path.basename(path.rstrip(os.sep))
+            parent = os.path.dirname(path.rstrip(os.sep))
+            if parent not in sys.path:
+                sys.path.insert(0, parent)
+            discovered: list[str] = []
+            for entry in sorted(os.listdir(path)):
+                if entry.startswith("_") or not entry.endswith(".py"):
+                    continue
+                discovered.append(f"{package}.{entry[:-3]}")
+            return discovered
+        try:
+            module = importlib.import_module(target)
+        except ImportError:
+            return [target]
+        if hasattr(module, "__path__"):
+            return [name for _, name, _ in pkgutil.iter_modules(module.__path__, module.__name__ + ".")]
+        return [target]
+
+    async def _load_one(self, name: str) -> bool:
+        try:
+            await self.load_extension(name)
+            return True
+        except commands.NoEntryPointError:
+            module = importlib.import_module(name)
+            added = 0
+            for _, member in inspect.getmembers(module, inspect.isclass):
+                if (
+                    issubclass(member, commands.Cog)
+                    and member is not commands.Cog
+                    and member.__module__ == module.__name__
+                ):
+                    instance = member(self) if _wants_argument(member) else member()
+                    await self.add_cog(instance)
+                    added += 1
+            return added > 0
+        except commands.ExtensionAlreadyLoaded:
+            return True
+
+    async def load_cogs(self, target: str) -> list[str]:
+        loaded: list[str] = []
+        for name in self._discover_extensions(target):
+            try:
+                if await self._load_one(name):
+                    loaded.append(name)
+            except commands.ExtensionError:
+                _log.exception("Failed to load extension '%s'", name)
+        if loaded:
+            _log.info("Loaded %d cog module(s): %s", len(loaded), ", ".join(loaded))
+        return loaded
+
+    async def reload_cogs(self, target: str) -> list[str]:
+        reloaded: list[str] = []
+        for name in self._discover_extensions(target):
+            try:
+                await self.reload_extension(name)
+                reloaded.append(name)
+            except commands.ExtensionNotLoaded:
+                if await self._load_one(name):
+                    reloaded.append(name)
+            except commands.ExtensionError:
+                _log.exception("Failed to reload extension '%s'", name)
+        return reloaded
+
+    async def sync(self, guild: int | discord.abc.Snowflake | None = None, *, copy_global: bool = False) -> list[app_commands.AppCommand]:
+        target = _as_object(guild) if guild is not None else None
+        if target is not None:
+            if copy_global:
+                self.tree.copy_global_to(guild=target)
+            return await self.tree.sync(guild=target)
+        return await self.tree.sync()
+
+    async def _maybe_sync(self) -> None:
+        if not self._auto_sync:
+            return
+        try:
+            if self._sync_guild is not None:
+                synced = await self.sync(self._sync_guild, copy_global=True)
+                _log.info("Synced %d command(s) to guild %s", len(synced), self._sync_guild.id)
+            else:
+                synced = await self.sync()
+                _log.info("Synced %d command(s) globally", len(synced))
+        except discord.HTTPException as exc:
+            _log.warning("Application command sync failed: %s", exc)
+
+    async def setup_hook(self) -> None:
+        for target in self._cog_targets:
+            await self.load_cogs(target)
+        await self._register_pending()
+        await self._maybe_sync()
+        if self._post_setup is not None:
+            await discord.utils.maybe_coroutine(self._post_setup, self)
+
+    async def on_ready(self) -> None:
+        if self._announced or not self._on_ready_log:
+            return
+        self._announced = True
+        user = self.user
+        guild_count = len(self.guilds)
+        _log.info("Logged in as %s (%s) across %d guild(s)", user, getattr(user, "id", "?"), guild_count)
+
+    def slash_cmd(self, name: str | Callable[..., Any] | None = None, **kwargs: Any) -> Any:
+        if callable(name) and not isinstance(name, str):
+            command = slash_cmd(**kwargs)(name)
+            self._adopt_app_command(command)
+            return command
+        base = slash_cmd(name, **kwargs)
+
+        def wrapper(func: Any) -> app_commands.Command:
+            command = base(func)
+            self._adopt_app_command(command)
+            return command
+
+        return wrapper
+
+    def hybrid_cmd(self, name: str | Callable[..., Any] | None = None, **kwargs: Any) -> Any:
+        if callable(name) and not isinstance(name, str):
+            command = hybrid_cmd(**kwargs)(name)
+            self._adopt_text_command(command)
+            return command
+        base = hybrid_cmd(name, **kwargs)
+
+        def wrapper(func: Any) -> commands.HybridCommand:
+            command = base(func)
+            self._adopt_text_command(command)
+            return command
+
+        return wrapper
+
+    async def _tree_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        if not self._handle_errors:
+            raise error
+        message = describe_error(error)
+        if message is None:
+            original = getattr(error, "original", error)
+            command_name = getattr(interaction.command, "qualified_name", "unknown")
+            _log.error("Unhandled app command error in '%s'", command_name, exc_info=original)
+            message = VexError.UNEXPECTED
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except discord.HTTPException:
+            pass
+
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        if not self._handle_errors:
+            return
+        if self.extra_events.get("on_command_error"):
+            return
+        command = ctx.command
+        if command is not None and command.has_error_handler():
+            return
+        cog = ctx.cog
+        if cog is not None and cog.has_error_handler():
+            return
+        if isinstance(error, commands.CommandNotFound):
+            return
+        message = describe_error(error)
+        if message is None:
+            original = getattr(error, "original", error)
+            command_name = getattr(command, "qualified_name", "unknown")
+            _log.error("Unhandled command error in '%s'", command_name, exc_info=original)
+            message = VexError.UNEXPECTED
+        try:
+            await ctx.send(message)
+        except discord.HTTPException:
+            pass
+
+    def listener(self, name: str | None = None) -> Any:
+        return self.listen(name) if name else self.listen()
+
+    def run(self, token: str | None = None, **kwargs: Any) -> None:
+        token = (
+            token
+            or os.environ.get("DISCORD_TOKEN")
+            or os.environ.get("BOT_TOKEN")
+            or os.environ.get("TOKEN")
+        )
+        if not token:
+            raise RuntimeError(
+                "No bot token supplied. Pass run(token) or set the DISCORD_TOKEN environment variable."
+            )
+        if "log_handler" not in kwargs and not logging.getLogger().handlers:
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s")
+        super().run(token, **kwargs)
+
+
+Client = Bot
+
+
+def bot(command_prefix: Any = "!", **kwargs: Any) -> Bot:
+    return Bot(command_prefix, **kwargs)
+
+
+def client(command_prefix: Any = "!", **kwargs: Any) -> Bot:
+    return Bot(command_prefix, **kwargs)
+
+
+def _defined_in_class_body(depth: int = 2) -> bool:
+    try:
+        frame = sys._getframe(depth)
+    except ValueError:
+        return False
+    return "__qualname__" in frame.f_locals and "__module__" in frame.f_locals
+
+
+class Cog(commands.Cog):
+    def __init__(self, bot: Bot | None = None) -> None:
+        self.bot = bot
+
+    async def cog_load(self) -> None:
+        return None
+
+    async def cog_unload(self) -> None:
+        return None
+
+
+class SlashGroup(app_commands.Group):
+    def slash_cmd(
+        self,
+        name: str | Callable[..., Any] | None = None,
+        *,
+        description: str | None = None,
+        nsfw: bool = False,
+        extras: dict[str, Any] | None = None,
+    ) -> Any:
+        direct: Any = None
+        if callable(name) and not isinstance(name, str):
+            direct = name
+            name = None
+
+        def decorator(func: Any) -> app_commands.Command:
+            resolved = _resolve_description(func, description)
+            child_name = (name or getattr(func, "__name__", "command")).lower().replace(" ", "-")
+            built = self.command(name=child_name, description=resolved, nsfw=nsfw, extras=extras or {})(func)
+            info = _apply_command_meta(func, child_name, description=description, resolved=resolved)
+            if info.category == "General":
+                info.category = self.name
+            _drain_pending_checks(func, built)
+            return built
+
+        if direct is not None:
+            return decorator(direct)
+        return decorator
+
+    def sub(self, name: str | Callable[..., Any] | None = None, **kwargs: Any) -> Any:
+        return self.slash_cmd(name, **kwargs)
+
+    def subgroup(self, name: str, *, description: str = "\u2026") -> "SlashGroup":
+        child = SlashGroup(name=name, description=description, parent=self)
+        return child
+
+
+def slash_group(
+    name: str,
+    *,
+    description: str = "\u2026",
+    guild: int | discord.abc.Snowflake | None = None,
+    guilds: list[int | discord.abc.Snowflake] | None = None,
+    guild_only: bool = False,
+    nsfw: bool = False,
+) -> SlashGroup:
+    group_obj = SlashGroup(name=name, description=description, guild_only=guild_only, nsfw=nsfw)
+    targets = _normalise_guilds(guild, guilds)
+    if targets is not None:
+        setattr(group_obj, "_vex_guilds", targets)
+    setattr(group_obj, "_vex_kind", "group")
+    if not _defined_in_class_body():
+        _PENDING_APP_COMMANDS.append(group_obj)
+    return group_obj
+
+
+def group(name: str, **kwargs: Any) -> SlashGroup:
+    return slash_group(name, **kwargs)
+
+
+def command_group(name: str, **kwargs: Any) -> SlashGroup:
+    return slash_group(name, **kwargs)
+
+
+def hybrid_group(
+    name: str | Callable[..., Any] | None = None,
+    *,
+    description: str | None = None,
+    aliases: list[str] | None = None,
+    guild: int | discord.abc.Snowflake | None = None,
+    guilds: list[int | discord.abc.Snowflake] | None = None,
+    with_app_command: bool = True,
+    fallback: str | None = None,
+) -> Any:
+    direct: Any = None
+    if callable(name) and not isinstance(name, str):
+        direct = name
+        name = None
+
+    def decorator(func: Any) -> commands.HybridGroup:
+        command_name = name or getattr(func, "__name__", "group")
+        resolved = _resolve_description(func, description)
+        built = commands.hybrid_group(
+            name=command_name,
+            description=resolved,
+            aliases=aliases or [],
+            with_app_command=with_app_command,
+            fallback=fallback,
+        )(func)
+        _apply_command_meta(func, command_name, description=description, resolved=resolved, aliases=aliases)
+        targets = _normalise_guilds(guild, guilds)
+        if targets is not None:
+            setattr(built, "_vex_guilds", targets)
+        setattr(built, "_vex_kind", "hybrid_group")
+        _drain_pending_checks(func, built)
+        if not _is_class_scoped(func):
+            _PENDING_TEXT_COMMANDS.append(built)
+        return built
+
+    if direct is not None:
+        return decorator(direct)
+    return decorator
+
+
+_PENDING_LISTENERS: list[tuple[str, Callable[..., Any]]] = []
+
+_BUCKETS = {
+    "default": commands.BucketType.default,
+    "global": commands.BucketType.default,
+    "user": commands.BucketType.user,
+    "member": commands.BucketType.member,
+    "guild": commands.BucketType.guild,
+    "server": commands.BucketType.guild,
+    "channel": commands.BucketType.channel,
+    "category": commands.BucketType.category,
+    "role": commands.BucketType.role,
+}
+
+
+class _OwnerCheckFailure(app_commands.CheckFailure):
+    pass
+
+
+class _NSFWCheckFailure(app_commands.CheckFailure):
+    pass
+
+
+def _bucket_type(bucket: "str | commands.BucketType") -> commands.BucketType:
+    if isinstance(bucket, commands.BucketType):
+        return bucket
+    return _BUCKETS.get(str(bucket).lower(), commands.BucketType.user)
+
+
+def _cooldown_key(bucket: "str | commands.BucketType") -> Callable[[discord.Interaction], Any]:
+    name = bucket.name if isinstance(bucket, commands.BucketType) else str(bucket).lower()
+    if name in ("guild", "server"):
+        return lambda interaction: interaction.guild_id
+    if name == "channel":
+        return lambda interaction: interaction.channel_id
+    if name in ("default", "global"):
+        return lambda interaction: None
+    return lambda interaction: interaction.user.id
+
+
+def _format_retry(message: str, retry_after: float | None) -> str:
+    if not retry_after:
+        return message
+    seconds = max(1, int(retry_after + 0.5))
+    unit = "second" if seconds == 1 else "seconds"
+    return f"{message} Try again in {seconds} {unit}."
+
+
+def describe_error(error: BaseException) -> str | None:
+    retry_after = getattr(error, "retry_after", None)
+    if isinstance(error, commands.CommandNotFound):
+        return None
+    if isinstance(error, (commands.CommandOnCooldown, app_commands.CommandOnCooldown)):
+        return _format_retry(VexError.COOLDOWN, retry_after)
+    if isinstance(error, commands.MaxConcurrencyReached):
+        return VexError.MAX_CONCURRENCY
+    if isinstance(error, (commands.BotMissingPermissions, app_commands.BotMissingPermissions)):
+        return VexError.BOT_MISSING_PERMISSIONS
+    if isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
+        return VexError.MISSING_PERMISSIONS
+    if isinstance(error, (_OwnerCheckFailure, commands.NotOwner)):
+        return VexError.OWNER_ONLY
+    if isinstance(error, (_NSFWCheckFailure, commands.NSFWChannelRequired)):
+        return VexError.NSFW_ONLY
+    if isinstance(error, (commands.NoPrivateMessage, app_commands.NoPrivateMessage)):
+        return VexError.SERVER_ONLY
+    if isinstance(error, commands.PrivateMessageOnly):
+        return VexError.DM_ONLY
+    if isinstance(error, (commands.MissingRole, commands.MissingAnyRole, commands.BotMissingRole, commands.BotMissingAnyRole, app_commands.MissingRole, app_commands.MissingAnyRole)):
+        return VexError.FORBIDDEN
+    if isinstance(error, commands.MissingRequiredArgument):
+        return VexError.MISSING_ARGUMENT
+    if isinstance(error, (commands.BadArgument, commands.BadUnionArgument)):
+        return VexError.INVALID_ARGUMENT
+    if isinstance(error, commands.UserInputError):
+        return VexError.INVALID_ARGUMENT
+    if isinstance(error, commands.DisabledCommand):
+        return VexError.DISABLED
+    if isinstance(error, (commands.CheckFailure, app_commands.CheckFailure)):
+        return VexError.FORBIDDEN
+    return None
+
+
+def listener(name: str | Callable[..., Any] | None = None) -> Any:
+    direct: Any = None
+    if callable(name) and not isinstance(name, str):
+        direct = name
+        name = None
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        event_name = name or getattr(func, "__name__", "on_event")
+        if _is_class_scoped(func):
+            return commands.Cog.listener(name=event_name)(func)
+        setattr(func, "_vex_listener", event_name)
+        _PENDING_LISTENERS.append((event_name, func))
+        return func
+
+    if direct is not None:
+        return decorator(direct)
+    return decorator
+
+
+event = listener
+
+
+def _stash_or_apply(target: Any, app_deco: Callable[[Any], Any], ext_deco: Callable[[Any], Any]) -> Any:
+    if isinstance(target, commands.Command):
+        ext_deco(target)
+        return target
+    if isinstance(target, app_commands.Command):
+        app_deco(target)
+        return target
+    if isinstance(target, app_commands.Group):
+        try:
+            app_deco(target)
+        except Exception:
+            pass
+        return target
+    pending = getattr(target, "_vex_pending_checks", None)
+    if pending is None:
+        pending = []
+        setattr(target, "_vex_pending_checks", pending)
+    pending.append((app_deco, ext_deco))
+    return target
+
+
+def _drain_pending_checks(func: Any, built: Any) -> Any:
+    pending = getattr(func, "_vex_pending_checks", None)
+    if not pending:
+        return built
+    if isinstance(built, commands.Command):
+        for _app_deco, ext_deco in pending:
+            ext_deco(built)
+    elif isinstance(built, app_commands.Command):
+        for app_deco, _ext_deco in pending:
+            app_deco(built)
+    try:
+        delattr(func, "_vex_pending_checks")
+    except AttributeError:
+        pass
+    return built
+
+
+def _dual_decorator(app_deco: Callable[[Any], Any], ext_deco: Callable[[Any], Any], target: Any) -> Any:
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(obj, app_deco, ext_deco)
+
+    if target is None:
+        return decorator
+    return decorator(target)
+
+
+async def _owner_predicate(interaction: discord.Interaction) -> bool:
+    bot_client = interaction.client
+    checker = getattr(bot_client, "is_owner", None)
+    if checker is not None and await checker(interaction.user):
+        return True
+    raise _OwnerCheckFailure("You do not own this bot.")
+
+
+async def _nsfw_predicate(interaction: discord.Interaction) -> bool:
+    channel = interaction.channel
+    if channel is not None and getattr(channel, "is_nsfw", lambda: False)():
+        return True
+    raise _NSFWCheckFailure("This channel is not age-restricted.")
+
+
+def owner_only(target: Any = None) -> Any:
+    return _dual_decorator(app_commands.check(_owner_predicate), commands.is_owner(), target)
+
+
+def guild_only(target: Any = None) -> Any:
+    return _dual_decorator(app_commands.guild_only(), commands.guild_only(), target)
+
+
+def dm_only(target: Any = None) -> Any:
+    return _dual_decorator(app_commands.dm_only(), commands.dm_only(), target)
+
+
+def nsfw_only(target: Any = None) -> Any:
+    def app_deco(obj: Any) -> Any:
+        app_commands.check(_nsfw_predicate)(obj)
+        try:
+            obj.nsfw = True
+        except Exception:
+            pass
+        return obj
+
+    def ext_deco(obj: Any) -> Any:
+        commands.is_nsfw()(obj)
+        app_command = getattr(obj, "app_command", None)
+        if app_command is not None:
+            try:
+                app_command.nsfw = True
+            except Exception:
+                pass
+        return obj
+
+    return _dual_decorator(app_deco, ext_deco, target)
+
+
+def has_permissions(**perms: bool) -> Callable[[Any], Any]:
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(
+            obj,
+            app_commands.checks.has_permissions(**perms),
+            commands.has_permissions(**perms),
+        )
+
+    return decorator
+
+
+def bot_has_permissions(**perms: bool) -> Callable[[Any], Any]:
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(
+            obj,
+            app_commands.checks.bot_has_permissions(**perms),
+            commands.bot_has_permissions(**perms),
+        )
+
+    return decorator
+
+
+def has_role(role: "int | str") -> Callable[[Any], Any]:
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(
+            obj,
+            app_commands.checks.has_role(role),
+            commands.has_role(role),
+        )
+
+    return decorator
+
+
+def has_any_role(*roles: "int | str") -> Callable[[Any], Any]:
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(
+            obj,
+            app_commands.checks.has_any_role(*roles),
+            commands.has_any_role(*roles),
+        )
+
+    return decorator
+
+
+def cooldown(rate: int, per: float, *, bucket: "str | commands.BucketType" = "user") -> Callable[[Any], Any]:
+    bucket_type = _bucket_type(bucket)
+    key = _cooldown_key(bucket)
+
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(
+            obj,
+            app_commands.checks.cooldown(rate, per, key=key),
+            commands.cooldown(rate, per, bucket_type),
+        )
+
+    return decorator
+
+
+def guild_cooldown(rate: int, per: float) -> Callable[[Any], Any]:
+    return cooldown(rate, per, bucket="guild")
+
+
+def check(predicate: Callable[..., Any]) -> Callable[[Any], Any]:
+    def decorator(obj: Any) -> Any:
+        return _stash_or_apply(
+            obj,
+            app_commands.check(predicate),
+            commands.check(predicate),
+        )
+
+    return decorator
+
+
+import re as _re
+
+_MENTION_RE = _re.compile(r"^<@!?(\d{2,20})>$")
+_ROLE_MENTION_RE = _re.compile(r"^<@&(\d{2,20})>$")
+_CHANNEL_MENTION_RE = _re.compile(r"^<#(\d{2,20})>$")
+_ID_RE = _re.compile(r"^(\d{2,20})$")
+_CUSTOM_EMOJI_RE = _re.compile(r"^<(a?):([A-Za-z0-9_]+):(\d{2,20})>$")
+_DURATION_RE = _re.compile(r"(\d+)\s*([wdhms])", _re.IGNORECASE)
+_DURATION_UNITS = {"w": 604800, "d": 86400, "h": 3600, "m": 60, "s": 1}
+
+
+class ConvertError(commands.BadArgument, app_commands.AppCommandError):
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
+def _interaction_of(ctx_or_itx: Any) -> "discord.Interaction | None":
+    if isinstance(ctx_or_itx, discord.Interaction):
+        return ctx_or_itx
+    return getattr(ctx_or_itx, "interaction", None)
+
+
+def _client_of(ctx_or_itx: Any) -> Any:
+    if isinstance(ctx_or_itx, discord.Interaction):
+        return ctx_or_itx.client
+    return getattr(ctx_or_itx, "bot", None) or getattr(ctx_or_itx, "client", None)
+
+
+def _guild_of(ctx_or_itx: Any) -> "discord.Guild | None":
+    return getattr(ctx_or_itx, "guild", None)
+
+
+class _BaseConverter(app_commands.Transformer, commands.Converter):
+    error_message: str = VexError.NOT_FOUND
+    allow_none: bool = False
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        raise NotImplementedError
+
+    async def _finish(self, source: Any, value: Any) -> Any:
+        text = (str(value) if value is not None else "").strip()
+        if not text:
+            if self.allow_none:
+                return None
+            raise ConvertError(self.error_message)
+        result = await self._resolve(source, text)
+        if result is None and not self.allow_none:
+            raise ConvertError(self.error_message)
+        return result
+
+    async def transform(self, interaction: discord.Interaction, value: Any) -> Any:
+        return await self._finish(interaction, value)
+
+    async def convert(self, ctx: commands.Context, argument: str) -> Any:
+        return await self._finish(ctx, argument)
+
+
+class _UserConverter(_BaseConverter):
+    error_message = VexError.USER_NOT_FOUND
+    type = discord.AppCommandOptionType.user
+
+    def __init__(self, *, allow_none: bool = False) -> None:
+        self.allow_none = allow_none
+
+    async def transform(self, interaction: discord.Interaction, value: Any) -> Any:
+        if isinstance(value, (discord.User, discord.Member)):
+            return value
+        return await self._finish(interaction, value)
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        client = _client_of(source)
+        guild = _guild_of(source)
+        match = _MENTION_RE.match(value) or _ID_RE.match(value)
+        if match:
+            uid = int(match.group(1))
+            if guild is not None:
+                member = guild.get_member(uid)
+                if member is not None:
+                    return member
+            if client is not None:
+                cached = client.get_user(uid)
+                if cached is not None:
+                    return cached
+            if guild is not None:
+                try:
+                    return await guild.fetch_member(uid)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            if client is not None:
+                try:
+                    return await client.fetch_user(uid)
+                except (discord.NotFound, discord.HTTPException):
+                    return None
+            return None
+        if guild is not None:
+            lowered = value.lower()
+            if value.startswith("@"):
+                value = value[1:]
+                lowered = value.lower()
+            named = discord.utils.find(
+                lambda m: m.name.lower() == lowered or m.display_name.lower() == lowered or str(m).lower() == lowered,
+                guild.members,
+            )
+            if named is not None:
+                return named
+            prefixed = discord.utils.find(
+                lambda m: m.name.lower().startswith(lowered) or m.display_name.lower().startswith(lowered),
+                guild.members,
+            )
+            if prefixed is not None:
+                return prefixed
+        return None
+
+
+class _MemberConverter(_UserConverter):
+    error_message = VexError.MEMBER_NOT_FOUND
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        guild = _guild_of(source)
+        if guild is None:
+            return None
+        result = await super()._resolve(source, value)
+        if result is None:
+            return None
+        if isinstance(result, discord.Member):
+            return result
+        member = guild.get_member(result.id)
+        if member is not None:
+            return member
+        try:
+            return await guild.fetch_member(result.id)
+        except (discord.NotFound, discord.HTTPException):
+            return None
+
+
+class _RoleConverter(_BaseConverter):
+    error_message = VexError.ROLE_NOT_FOUND
+    type = discord.AppCommandOptionType.role
+
+    def __init__(self, *, allow_none: bool = False) -> None:
+        self.allow_none = allow_none
+
+    async def transform(self, interaction: discord.Interaction, value: Any) -> Any:
+        if isinstance(value, discord.Role):
+            return value
+        return await self._finish(interaction, value)
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        guild = _guild_of(source)
+        if guild is None:
+            return None
+        match = _ROLE_MENTION_RE.match(value) or _ID_RE.match(value)
+        if match:
+            return guild.get_role(int(match.group(1)))
+        lowered = value.lower()
+        return discord.utils.find(lambda r: r.name.lower() == lowered, guild.roles) or discord.utils.find(
+            lambda r: r.name.lower().startswith(lowered), guild.roles
+        )
+
+
+class _ChannelConverter(_BaseConverter):
+    error_message = VexError.CHANNEL_NOT_FOUND
+    type = discord.AppCommandOptionType.channel
+
+    def __init__(self, *, allow_none: bool = False) -> None:
+        self.allow_none = allow_none
+
+    async def transform(self, interaction: discord.Interaction, value: Any) -> Any:
+        if isinstance(value, (discord.abc.GuildChannel, discord.Thread)):
+            return value
+        return await self._finish(interaction, value)
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        guild = _guild_of(source)
+        if guild is None:
+            return None
+        match = _CHANNEL_MENTION_RE.match(value) or _ID_RE.match(value)
+        if match:
+            return guild.get_channel_or_thread(int(match.group(1))) if hasattr(guild, "get_channel_or_thread") else guild.get_channel(int(match.group(1)))
+        lowered = value.lstrip("#").lower()
+        return discord.utils.find(lambda c: c.name.lower() == lowered, guild.channels) or discord.utils.find(
+            lambda c: c.name.lower().startswith(lowered), guild.channels
+        )
+
+
+class _DurationConverter(_BaseConverter):
+    error_message = "Give a duration like 1d12h, 90m, or 2h30m."
+    type = discord.AppCommandOptionType.string
+
+    def __init__(self, *, allow_none: bool = False, minimum: int | None = None, maximum: int | None = None) -> None:
+        self.allow_none = allow_none
+        self.minimum = minimum
+        self.maximum = maximum
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        matches = list(_DURATION_RE.finditer(value))
+        if not matches or _DURATION_RE.sub("", value).strip():
+            return None
+        total = sum(int(m.group(1)) * _DURATION_UNITS[m.group(2).lower()] for m in matches)
+        if total <= 0:
+            return None
+        if self.minimum is not None and total < self.minimum:
+            raise ConvertError("That duration is too short.")
+        if self.maximum is not None and total > self.maximum:
+            raise ConvertError("That duration is too long.")
+        return total
+
+
+class _EmojiConverter(_BaseConverter):
+    error_message = VexError.EMOJI_NOT_FOUND
+    type = discord.AppCommandOptionType.string
+
+    def __init__(self, *, allow_none: bool = False) -> None:
+        self.allow_none = allow_none
+
+    async def _resolve(self, source: Any, value: str) -> Any:
+        custom = _CUSTOM_EMOJI_RE.match(value)
+        if custom:
+            client = _client_of(source)
+            if client is not None:
+                found = client.get_emoji(int(custom.group(3)))
+                if found is not None:
+                    return found
+            return value
+        partial = discord.PartialEmoji.from_str(value)
+        if partial.is_unicode_emoji():
+            name = partial.name or ""
+            if name and not all(ch.isascii() and (ch.isalnum() or ch.isspace()) for ch in name):
+                return name
+            return None
+        return value
+
+
+def _build(factory: Any, allow_none: bool, **kwargs: Any) -> Any:
+    instance = factory(allow_none=allow_none, **kwargs)
+    return app_commands.Transform[Any, instance]
+
+
+def user(*, optional: bool = False) -> Any:
+    return _build(_UserConverter, optional)
+
+
+def member(*, optional: bool = False) -> Any:
+    return _build(_MemberConverter, optional)
+
+
+def role(*, optional: bool = False) -> Any:
+    return _build(_RoleConverter, optional)
+
+
+def channel(*, optional: bool = False) -> Any:
+    return _build(_ChannelConverter, optional)
+
+
+def duration(*, optional: bool = False, minimum: int | None = None, maximum: int | None = None) -> Any:
+    return _build(_DurationConverter, optional, minimum=minimum, maximum=maximum)
+
+
+def emoji(*, optional: bool = False) -> Any:
+    return _build(_EmojiConverter, optional)
+
+
+class convert:
+    user = staticmethod(user)
+    member = staticmethod(member)
+    role = staticmethod(role)
+    channel = staticmethod(channel)
+    duration = staticmethod(duration)
+    emoji = staticmethod(emoji)
+    User = _UserConverter
+    Member = _MemberConverter
+    Role = _RoleConverter
+    Channel = _ChannelConverter
+    Duration = _DurationConverter
+    Emoji = _EmojiConverter
+    Error = ConvertError
+
+    @staticmethod
+    async def to_user(source: Any, value: str, *, optional: bool = False) -> Any:
+        return await _UserConverter(allow_none=optional)._finish(source, value)
+
+    @staticmethod
+    async def to_member(source: Any, value: str, *, optional: bool = False) -> Any:
+        return await _MemberConverter(allow_none=optional)._finish(source, value)
+
+    @staticmethod
+    async def to_role(source: Any, value: str, *, optional: bool = False) -> Any:
+        return await _RoleConverter(allow_none=optional)._finish(source, value)
+
+    @staticmethod
+    async def to_channel(source: Any, value: str, *, optional: bool = False) -> Any:
+        return await _ChannelConverter(allow_none=optional)._finish(source, value)
+
+    @staticmethod
+    def to_duration(value: str, *, minimum: int | None = None, maximum: int | None = None) -> "int | None":
+        matches = list(_DURATION_RE.finditer(value or ""))
+        if not matches or _DURATION_RE.sub("", value or "").strip():
+            return None
+        total = sum(int(m.group(1)) * _DURATION_UNITS[m.group(2).lower()] for m in matches)
+        if total <= 0:
+            return None
+        if minimum is not None and total < minimum:
+            return None
+        if maximum is not None and total > maximum:
+            return None
+        return total
+
+    @staticmethod
+    def to_emoji(value: str) -> "str | None":
+        if not value:
+            return None
+        custom = _CUSTOM_EMOJI_RE.match(value)
+        if custom:
+            return value
+        partial = discord.PartialEmoji.from_str(value)
+        if partial.is_unicode_emoji():
+            name = partial.name or ""
+            if name and not all(ch.isascii() and (ch.isalnum() or ch.isspace()) for ch in name):
+                return name
+            return None
+        return value
+
+
+__all__ = [
+    "Vex",
+    "convert",
+    "ConvertError",
+    "Bot",
+    "Client",
+    "Cog",
+    "bot",
+    "client",
+    "vex",
+    "ActionRowBuilder",
+    "AuditCard",
+    "AutoDeleteView",
+    "ButtonBuilder",
+    "ChannelPickerView",
+    "ChoiceView",
+    "CommandInfo",
+    "ConfirmView",
+    "ContainerBuilder",
+    "CooldownCard",
+    "CooldownStore",
+    "DiffCard",
+    "FileBuilder",
+    "GalleryBuilder",
+    "GlobalCooldown",
+    "GradientColours",
+    "GroupedPaginator",
+    "HelpRegistry",
+    "InfinitePaginator",
+    "JumpSelectPaginator",
+    "LiveView",
+    "MediaCollector",
+    "ModalBuilder",
+    "MultiConfirmView",
+    "PageGroup",
+    "PageRenderer",
+    "Paginator",
+    "PollBuilder",
+    "PresenceHandler",
+    "PromptInput",
+    "RolePickerView",
+    "ScrollPaginator",
+    "SectionBuilder",
+    "SelectBuilder",
+    "SelectMenu",
+    "SelectOptionBuilder",
+    "SlashGroup",
+    "TableBuilder",
+    "TextInputBuilder",
+    "Theme",
+    "TimedConfirmView",
+    "TypedConfirmView",
+    "TypedSelectBuilder",
+    "UserPickerView",
+    "VexError",
+    "VexValidationError",
+    "Wizard",
+    "WizardStep",
+    "action_row",
+    "aside",
+    "ask",
+    "audit_card",
+    "auto_delete",
+    "bar",
+    "bot_has_permissions",
+    "box",
+    "btn",
+    "build",
+    "button",
+    "bytes_file",
+    "card",
+    "channel_picker",
+    "channel_picker_view",
+    "channel_select",
+    "check",
+    "choice",
+    "choice_view",
+    "cmd",
+    "cmd_alias",
+    "cmd_category",
+    "cmd_desc",
+    "cmd_example",
+    "cmd_hidden",
+    "cmd_syntax",
+    "collector",
+    "command_group",
+    "confirm",
+    "confirm_view",
+    "container",
+    "cooldown",
+    "cooldown_card",
+    "cooldown_store",
+    "create",
+    "describe_error",
+    "diff_card",
+    "disable_all",
+    "dm_only",
+    "document",
+    "dropdown",
+    "edit_to_v2",
+    "error_card",
+    "event",
+    "field_input",
+    "file",
+    "file_component",
+    "file_from_text",
+    "form",
+    "frame",
+    "freeze_view",
+    "gallery",
+    "global_cooldown",
+    "gradient",
+    "group",
+    "grouped_paginator",
+    "guild_cooldown",
+    "guild_only",
+    "has_any_role",
+    "has_permissions",
+    "has_role",
+    "hybrid_cmd",
+    "hybrid_group",
+    "images",
+    "info_card",
+    "layout",
+    "leaderboard",
+    "listener",
+    "live",
+    "make",
+    "make_persistent",
+    "media",
+    "media_collector",
+    "mentionable_select",
+    "message",
+    "meter",
+    "modal",
+    "multi_confirm",
+    "new",
+    "nsfw_only",
+    "owner_only",
+    "pages",
+    "paginate",
+    "paginator",
+    "panel",
+    "persist",
+    "pick",
+    "poll",
+    "presence",
+    "progress",
+    "prompt",
+    "prompt_input",
+    "register_view",
+    "registry",
+    "registry_categories",
+    "registry_category_select",
+    "registry_to_select",
+    "role_picker",
+    "role_select",
+    "row",
+    "safe_defer",
+    "safe_delete",
+    "safe_edit",
+    "scroll_paginator",
+    "search_commands",
+    "section",
+    "select",
+    "select_menu",
+    "set_theme",
+    "slash_cmd",
+    "slash_group",
+    "success_card",
+    "survey",
+    "table",
+    "text_file",
+    "text_input",
+    "theme",
+    "timed_confirm",
+    "typed_confirm",
+    "use_theme",
+    "user_picker",
+    "user_picker_view",
+    "user_select",
+    "view",
+    "wait_input",
+    "warning_card",
+    "wizard",
+]
