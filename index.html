@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vex V2.2 Documentation</title>
+<title>Vex V2.4 Documentation</title>
 <style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;--text:#c9d1d9;--text2:#8b949e;--head:#f0f6fc;--link:#58a6ff;--link2:#79c0ff;--code:#161b22;--code2:#e6edf3;--th:#21262d;--tr:#0d1117;--tr2:#161b22;--btn:#21262d;--btn2:#30363d;--btnh:#484f58}
 *{box-sizing:border-box}
@@ -41,6 +41,13 @@ hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
 
 .copy{position:absolute;top:0.5rem;right:0.5rem;background:var(--btn);border:1px solid var(--border);color:var(--text2);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.8em;cursor:pointer;opacity:0;transition:opacity 0.15s;z-index:2;pointer-events:auto}
 .copy:hover{background:var(--btnh);color:var(--text)}
+.dl{display:inline-flex;align-items:center;gap:0.5rem;background:var(--link);color:#0d1117;font-weight:600;padding:0.6rem 1.1rem;border-radius:6px;font-size:0.95em;border:1px solid var(--link);transition:background 0.15s,color 0.15s}
+.dl:hover{background:var(--link2);border-color:var(--link2);color:#0d1117;text-decoration:none}
+.dl svg{width:1em;height:1em;fill:currentColor}
+.tree{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:0.85em;line-height:1.7;color:var(--text)}
+.tree .dir{color:var(--link2)}
+.tree .new{color:#3fb950;font-weight:600}
+.tree .cm{color:var(--text2)}
 pre:hover .copy{opacity:1}
 
 .burger{display:none;position:fixed;top:0.7rem;right:1rem;z-index:100;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:0.5rem 0.7rem;cursor:pointer;color:var(--text)}
@@ -71,10 +78,12 @@ table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 <div class="overlay" onclick="toggle()"></div>
 <div class="layout">
 <nav class="sidebar" id="nav">
-<a style="font-weight:600;font-size:1.1rem;color:var(--head);margin-bottom:1rem;display:block;">Vex V2.2</a>
+<a style="font-weight:600;font-size:1.1rem;color:var(--head);margin-bottom:1rem;display:block;">Vex V2.4</a>
 <h2>Overview</h2>
 <a onclick="go('quick')">Quick Start</a>
 <a onclick="go('vex')">Vex View</a>
+<a onclick="go('commands')">Commands &amp; Checks</a>
+<a onclick="go('convert')">Converters</a>
 <h2>Builders</h2>
 <a onclick="go('button')">ButtonBuilder</a>
 <a onclick="go('select')">SelectBuilder</a>
@@ -111,6 +120,23 @@ table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 
 <div class="page active" id="p-quick">
 <h1>Quick Start</h1>
+<h2>1. Download the library</h2>
+<p>Vex is a single file. Download it and drop it into your bot.</p>
+<p><a class="dl" href="https://raw.githubusercontent.com/vexed-bot/api/main/vex.py" download="vex.py"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 1.75a.75.75 0 0 1 1.5 0v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V1.75ZM2.75 13a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>Download vex.py</a></p>
+<p class="cm" style="color:var(--text2);font-size:0.9em;">Or view the source on <a href="https://github.com/vexed-bot/api/blob/main/vex.py" target="_blank" rel="noopener">GitHub</a>.</p>
+<h2>2. Place it next to your main file</h2>
+<p>Put the downloaded <code>vex.py</code> in your bot's main directory, right beside the file that starts your bot (often <code>main.py</code> or <code>bot.py</code>). No installation or pip command is needed.</p>
+<div class="tree">
+<span class="dir">your-bot/</span><br>
+&nbsp;&nbsp;├── main.py<br>
+&nbsp;&nbsp;├── <span class="new">vex.py</span>&nbsp;&nbsp;<span class="cm"># &lt;- drop the downloaded file here</span><br>
+&nbsp;&nbsp;├── requirements.txt<br>
+&nbsp;&nbsp;└── <span class="dir">cogs/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── tickets.py<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── giveaways.py
+</div>
+<p>Because <code>vex.py</code> sits beside <code>main.py</code>, you can import it directly from anywhere in your project.</p>
+<h2>3. Import and build</h2>
 <pre><code>import vex
 
 view = (
@@ -126,8 +152,8 @@ view = (
 )
 
 await view.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
-<h2>What is Vex V2.2</h2>
-<p>A fluent, minimal builder library for Discord Components V2 (Layout Views) in Python. Vex wraps discord.py V2 primitives with chainable APIs, pre-built paginators, confirmation flows, modals, cooldown utilities, a lightweight command help registry, live views, wizards, polls, and a full theming system.</p>
+<h2>What is Vex V2.4</h2>
+<p>A fluent, minimal builder library for Discord Components V2 (Layout Views) in Python. Vex wraps discord.py V2 primitives with chainable APIs, pre-built paginators, confirmation flows, modals, cooldown utilities, a lightweight command help registry, live views, wizards, polls, argument converters, and a full theming system.</p>
 </div>
 
 <div class="page" id="p-vex">
@@ -212,6 +238,115 @@ await view.send_to(channel)</code><button class="copy" onclick="copy(this)">Copy
     )
 )
 await view.reply_to(interaction, ephemeral=True)</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+</div>
+
+<div class="page" id="p-commands">
+<h1>Commands &amp; Checks</h1>
+<p>Vex provides decorators for defining slash, hybrid, and grouped commands, plus a set of checks that work on both application commands and prefix commands. Inside a <code>vex.Cog</code> the commands register automatically; defined at module level they are queued and picked up by the bot on load.</p>
+<h2>Command Decorators</h2>
+<table>
+<tr><th>Decorator</th><th>Description</th></tr>
+<tr><td><code>@vex.slash_cmd(...)</code></td><td>Define an application (slash) command. Name defaults to the function name; description falls back to the docstring.</td></tr>
+<tr><td><code>@vex.hybrid_cmd(...)</code></td><td>Define a command usable as both a slash command and a prefix command.</td></tr>
+<tr><td><code>@vex.slash_group(name, ...)</code></td><td>Create a slash command group. Aliases: <code>group</code>, <code>command_group</code>.</td></tr>
+<tr><td><code>@vex.hybrid_group(name, ...)</code></td><td>Create a hybrid command group.</td></tr>
+<tr><td><code>@vex.cmd(name, aliases=[...])</code></td><td>Define a classic prefix command.</td></tr>
+</table>
+<h4>slash_cmd / hybrid_cmd parameters</h4>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>Command name. Defaults to the function name, lowercased with spaces turned into dashes.</td></tr>
+<tr><td><code>description</code></td><td>Shown in the command picker. Falls back to the function docstring.</td></tr>
+<tr><td><code>guild</code> / <code>guilds</code></td><td>Restrict registration to one or more guilds for instant updates during development.</td></tr>
+<tr><td><code>nsfw</code></td><td>Mark the command as age-restricted.</td></tr>
+<tr><td><code>category</code></td><td>Grouping label used by the help registry.</td></tr>
+<tr><td><code>aliases</code> (hybrid)</td><td>Alternate prefix invocations.</td></tr>
+</table>
+<h2>Checks</h2>
+<p>Checks decorate a command and run before it executes. They apply to slash and prefix commands alike.</p>
+<table>
+<tr><th>Check</th><th>Description</th></tr>
+<tr><td><code>@vex.owner_only</code></td><td>Only the bot owner may run the command.</td></tr>
+<tr><td><code>@vex.guild_only</code></td><td>Disallow use in DMs.</td></tr>
+<tr><td><code>@vex.dm_only</code></td><td>Only usable in direct messages.</td></tr>
+<tr><td><code>@vex.nsfw_only</code></td><td>Only usable in age-restricted channels.</td></tr>
+<tr><td><code>@vex.has_permissions(**perms)</code></td><td>Require the invoking user to hold the given permissions, e.g. <code>administrator=True</code>.</td></tr>
+<tr><td><code>@vex.bot_has_permissions(**perms)</code></td><td>Require the bot to hold the given permissions.</td></tr>
+<tr><td><code>@vex.has_role(role)</code></td><td>Require a specific role by id or name.</td></tr>
+<tr><td><code>@vex.has_any_role(*roles)</code></td><td>Require at least one of the listed roles.</td></tr>
+<tr><td><code>@vex.cooldown(rate, per, bucket="user")</code></td><td>Rate-limit the command. Bucket can be <code>"user"</code>, <code>"guild"</code>, <code>"channel"</code>, or a <code>BucketType</code>.</td></tr>
+<tr><td><code>@vex.guild_cooldown(rate, per)</code></td><td>Cooldown shared across an entire guild.</td></tr>
+<tr><td><code>@vex.check(predicate)</code></td><td>Custom check from any predicate callable.</td></tr>
+</table>
+<h2>Example</h2>
+<pre><code>class Tickets(vex.Cog):
+    panel = vex.slash_group("panel", description="Manage ticket panels.", guild_only=True)
+
+    @vex.slash_cmd(description="Close the current ticket.")
+    @vex.guild_only
+    @vex.cooldown(1, 10)
+    async def close(self, interaction: discord.Interaction, reason: str = None):
+        await interaction.response.send_message("Closing...")
+
+    @panel.slash_cmd(description="Create a new panel.")
+    @vex.has_permissions(administrator=True)
+    async def create(self, interaction: discord.Interaction, name: str):
+        await interaction.response.send_message(f"Created {name}")
+
+async def setup(bot):
+    await bot.add_cog(Tickets(bot))</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+<h2>Groups</h2>
+<p>A <code>SlashGroup</code> created with <code>vex.slash_group()</code> exposes its own <code>.slash_cmd()</code> decorator for subcommands, producing commands like <code>/panel create</code>. Discord supports a single level of nesting, so a group's subcommands cannot themselves be groups.</p>
+</div>
+
+<div class="page" id="p-convert">
+<h1>Converters</h1>
+<p><code>vex.convert</code> provides argument converters that resolve a mention, raw ID, or name into a Discord object. Each converter works as a type annotation in both slash commands and prefix commands at once, and falls back to a REST fetch when the target is not cached. Built around accepting user mention, ID, and username by default.</p>
+<h2>Converters</h2>
+<table>
+<tr><th>Annotation</th><th>Resolves</th><th>Accepts</th></tr>
+<tr><td><code>vex.convert.user()</code></td><td>User</td><td>Mention, ID, username, display name, prefix match. REST fetch fallback.</td></tr>
+<tr><td><code>vex.convert.member()</code></td><td>Member</td><td>Same as user, narrowed to the current guild with a fetch_member fallback.</td></tr>
+<tr><td><code>vex.convert.role()</code></td><td>Role</td><td>Role mention, ID, exact name, prefix match.</td></tr>
+<tr><td><code>vex.convert.channel()</code></td><td>Channel</td><td>Channel mention, ID, name (with or without leading #).</td></tr>
+<tr><td><code>vex.convert.duration(minimum=, maximum=)</code></td><td>int (seconds)</td><td>Strings like <code>1d12h</code>, <code>90m</code>, <code>2h30m</code>. Optional bounds in seconds.</td></tr>
+<tr><td><code>vex.convert.emoji()</code></td><td>str / Emoji</td><td>Unicode and custom emoji.</td></tr>
+</table>
+<h4>Options</h4>
+<table>
+<tr><th>Parameter</th><th>Description</th></tr>
+<tr><td><code>optional=True</code></td><td>Makes the parameter non-required and returns <code>None</code> on a miss instead of raising.</td></tr>
+<tr><td><code>minimum</code> / <code>maximum</code></td><td>Duration only. Reject values outside the range, in seconds.</td></tr>
+</table>
+<h2>Behaviour</h2>
+<ul>
+<li>In slash commands, <code>user()</code>, <code>member()</code>, <code>role()</code>, and <code>channel()</code> register as native Discord option types, so the client shows the proper picker.</li>
+<li>A failed conversion raises <code>vex.ConvertError</code>, which subclasses both <code>commands.BadArgument</code> and <code>app_commands.AppCommandError</code>, so a single error handler can catch it.</li>
+<li>With <code>optional=True</code> a miss yields <code>None</code> rather than an error.</li>
+</ul>
+<h2>Example</h2>
+<pre><code>class Mod(vex.Cog):
+    @vex.slash_cmd(description="Look up a member.")
+    async def whois(self, interaction: discord.Interaction, target: vex.convert.user()):
+        await interaction.response.send_message(f"{target} ({target.id})")
+
+    @vex.slash_cmd(description="Start a timed giveaway.")
+    async def gw(self, interaction: discord.Interaction,
+                 length: vex.convert.duration(minimum=30),
+                 host: vex.convert.member(optional=True) = None):
+        host = host or interaction.user
+        await interaction.response.send_message(f"{length}s giveaway by {host}")</code><button class="copy" onclick="copy(this)">Copy</button></pre>
+<h2>Standalone Helpers</h2>
+<p>Use these to resolve values mid-code without an annotation.</p>
+<table>
+<tr><th>Helper</th><th>Description</th></tr>
+<tr><td><code>await vex.convert.to_user(source, value)</code></td><td>Resolve a user from a context or interaction plus a string.</td></tr>
+<tr><td><code>await vex.convert.to_member(source, value)</code></td><td>Resolve a member.</td></tr>
+<tr><td><code>await vex.convert.to_role(source, value)</code></td><td>Resolve a role.</td></tr>
+<tr><td><code>await vex.convert.to_channel(source, value)</code></td><td>Resolve a channel.</td></tr>
+<tr><td><code>vex.convert.to_duration(value, minimum=, maximum=)</code></td><td>Parse a duration string to seconds, or <code>None</code>.</td></tr>
+<tr><td><code>vex.convert.to_emoji(value)</code></td><td>Normalize an emoji string, or <code>None</code>.</td></tr>
+</table>
 </div>
 
 <div class="page" id="p-button">
@@ -1357,7 +1492,7 @@ wiz = vex.wizard().step("Name", [vex.text_input("n", "Name")])
 live = vex.live(render_fn, interval=5.0)
 poll = vex.poll("Best language?").answer("Python").answer("Rust")</code><button class="copy" onclick="copy(this)">Copy</button></pre>
 <hr>
-<p style="color:var(--text2);font-size:0.9em;">Vex V2.2 Docs &mdash; MIT License</p>
+<p style="color:var(--text2);font-size:0.9em;">Vex V2.4 Docs &mdash; MIT License</p>
 </div>
 
 </main>
