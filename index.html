@@ -41,8 +41,9 @@ hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
 
 .copy{position:absolute;top:0.5rem;right:0.5rem;background:var(--btn);border:1px solid var(--border);color:var(--text2);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.8em;cursor:pointer;opacity:0;transition:opacity 0.15s;z-index:2;pointer-events:auto}
 .copy:hover{background:var(--btnh);color:var(--text)}
-.dl{display:inline-flex;align-items:center;gap:0.5rem;background:var(--link);color:#0d1117;font-weight:600;padding:0.6rem 1.1rem;border-radius:6px;font-size:0.95em;border:1px solid var(--link);transition:background 0.15s,color 0.15s}
+.dl{display:inline-flex;align-items:center;gap:0.5rem;background:var(--link);color:#0d1117;font-weight:600;padding:0.6rem 1.1rem;border-radius:6px;font-size:0.95em;border:1px solid var(--link);transition:background 0.15s,color 0.15s;cursor:pointer;font-family:inherit}
 .dl:hover{background:var(--link2);border-color:var(--link2);color:#0d1117;text-decoration:none}
+.dl:disabled{opacity:0.7;cursor:default}
 .dl svg{width:1em;height:1em;fill:currentColor}
 .tree{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem;font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:0.85em;line-height:1.7;color:var(--text)}
 .tree .dir{color:var(--link2)}
@@ -122,7 +123,7 @@ table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 <h1>Quick Start</h1>
 <h2>1. Download the library</h2>
 <p>Vex is a single file. Download it and drop it into your bot.</p>
-<p><a class="dl" href="https://raw.githubusercontent.com/vexed-bot/api/main/vex.py" download="vex.py"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 1.75a.75.75 0 0 1 1.5 0v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V1.75ZM2.75 13a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>Download vex.py</a></p>
+<p><button class="dl" onclick="download(this)" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.25 1.75a.75.75 0 0 1 1.5 0v6.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V1.75ZM2.75 13a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg><span>Download vex.py</span></button></p>
 <p class="cm" style="color:var(--text2);font-size:0.9em;">Or view the source on <a href="https://github.com/vexed-bot/api/blob/main/vex.py" target="_blank" rel="noopener">GitHub</a>.</p>
 <h2>2. Place it next to your main file</h2>
 <p>Put the downloaded <code>vex.py</code> in your bot's main directory, right beside the file that starts your bot (often <code>main.py</code> or <code>bot.py</code>). No installation or pip command is needed.</p>
@@ -1516,6 +1517,36 @@ function copy(btn){
         btn.textContent='Copied';
         setTimeout(()=>btn.textContent='Copy',1200);
     });
+}
+function download(btn){
+    const url='https://raw.githubusercontent.com/vexed-bot/api/main/vex.py';
+    const span=btn.querySelector('span');
+    const label=btn.dataset.label||(span?span.textContent:btn.textContent);
+    btn.dataset.label=label;
+    const setText=(t)=>{ if(span){span.textContent=t;} else {btn.textContent=t;} };
+    setText('Downloading...');
+    btn.disabled=true;
+    fetch(url).then(r=>{
+        if(!r.ok) throw new Error('status '+r.status);
+        return r.blob();
+    }).then(blob=>{
+        const a=document.createElement('a');
+        const obj=URL.createObjectURL(blob);
+        a.href=obj;
+        a.download='vex.py';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(obj);
+        setText('Downloaded');
+        btn.disabled=false;
+        setTimeout(()=>setText(label),1500);
+    }).catch(()=>{
+        setText(label);
+        btn.disabled=false;
+        window.open(url,'_blank','noopener');
+    });
+    return false;
 }
 </script>
 </body>
